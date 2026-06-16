@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+.env.local
+
+# Secrets
+service-account.json
+*.key
+
+# OS
+.DS_Store
