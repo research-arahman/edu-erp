@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import supabase
+from app.routers import countries, institutes
 
 app = FastAPI(title="edu-erp-api")
 
@@ -11,6 +12,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(countries.router)
+app.include_router(institutes.router)
 
 
 @app.get("/")
