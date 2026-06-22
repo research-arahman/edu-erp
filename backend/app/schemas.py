@@ -53,3 +53,43 @@ class InstituteUpdate(BaseModel):
     services: Optional[str] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+# ── Programs ─────────────────────────────────────────────────────────────────
+
+class ProgramCreate(BaseModel):
+    institute_id: str
+    level_category: str
+    level_label: Optional[str] = None
+    department: Optional[str] = None
+    course_name: str
+    tuition_fee: Optional[float] = None
+    admission_cost: Optional[float] = None
+    enrollment_cost: Optional[float] = None
+    currency: Optional[str] = None
+    duration_months: Optional[int] = None
+    is_active: bool = True
+
+
+class ProgramUpdate(BaseModel):
+    institute_id: Optional[str] = None
+    level_category: Optional[str] = None
+    level_label: Optional[str] = None
+    department: Optional[str] = None
+    course_name: Optional[str] = None
+    tuition_fee: Optional[float] = None
+    admission_cost: Optional[float] = None
+    enrollment_cost: Optional[float] = None
+    currency: Optional[str] = None
+    duration_months: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+# ── Program Sessions ──────────────────────────────────────────────────────────
+
+class ProgramSessionCreate(BaseModel):
+    session_name: str
+    start_date: Optional[str] = None
+    application_deadline: Optional[str] = None
+    seats: Optional[int] = None
+    is_open: bool = True
