@@ -102,3 +102,18 @@ Feeds candidate.target_* fields and (later) a roadmap.
   chart of accounts (same accounts/transactions/commissions tables).
 - Keep education and employment code parallel and consistent (routers,
   schemas, frontend components) so neither track creates a mess for the other.
+
+  ## Admission process templates (reusable, per country + study level)
+The admission PROCESS varies by country AND study level (e.g. Japan Master's
+requires finding a professor first; Western Master's applies to a central
+committee). Modeled as reusable templates, NOT per-program:
+- admission_templates — one row per (country_id + level_category), UNIQUE on
+  that pair. level_category matches programs.level_category
+  (bachelors/masters/phd/diploma/jlpt/english/...).
+- admission_steps — ordered steps for a template (step_order, title,
+  description, timeframe). timeframe is FREE TEXT (e.g. "3 months before
+  deadline") — never assume a structured date.
+A program inherits the template matching its country + level_category. When a
+student is on a program, their roadmap surfaces that template's steps.
+Programs themselves hold REQUIREMENTS (language_test_accepted, min_language_level,
+moi_accepted), not the process steps. Same RLS pattern as all tables.
