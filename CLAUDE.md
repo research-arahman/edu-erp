@@ -63,3 +63,42 @@ visual roadmap, which is visible to owner/manager/staff.
 - Write significant actions to activity_log.
 - Money: store amount + currency; default BDT; never hardcode FX.
 - Keep secrets out of Git (.env, service-account.json are gitignored).
+
+## Second track: Job Placement / SSW (employment)
+The system now serves TWO applicant types that share infrastructure
+(profiles, documents, tasks, accounting, activity_log) but have separate
+data chains and pipelines:
+- **Students** (education track) — existing.
+- **Candidates** (employment track) — job-seekers, esp. Japan SSW, expanding
+  to Europe and beyond.
+
+### Employment tables
+- industry_fields — SSW/industry sectors (Japan's 16 SSW fields seeded,
+  country-scoped, is_ssw flag).
+- qualification_types — language & skills tests (JLPT, JFT-Basic, SSW Skills
+  Test seeded); has levels[] array and optional industry_field_id.
+- employers — company database (parallel to institutes); industry_field_id,
+  is_ssw_registered, housing_support, contact person.
+- jobs — openings (parallel to programs); structured requirements via
+  req_language_qual_id + req_language_level and req_skills_qual_id; salary
+  range, start_period, positions_available.
+- candidates — job-seeker profile (parallel to students); work experience,
+  structured language/skills proficiency, and target chain.
+- job_applications + job_application_checklist — employment pipeline via
+  enum job_stage: applied → screening → interview → offer → coe_processing
+  → visa_processing → placed.
+
+### Employment cascading selector (parallel to education selector)
+Country → Industry/SSW field → Employer → Job position → start period.
+Mirrors the education selector pattern exactly; show only data that exists.
+Feeds candidate.target_* fields and (later) a roadmap.
+
+### Conventions for the employment track
+- Same RLS pattern as everything else: select/insert/update for authenticated;
+  delete via can_delete().
+- Language/skills requirements are STRUCTURED (point to qualification_types),
+  not free text — so the system can match candidate level vs job requirement.
+- Placement fees and consultant commissions post to the existing accounting
+  chart of accounts (same accounts/transactions/commissions tables).
+- Keep education and employment code parallel and consistent (routers,
+  schemas, frontend components) so neither track creates a mess for the other.
