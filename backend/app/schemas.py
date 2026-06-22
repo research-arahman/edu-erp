@@ -1,6 +1,5 @@
 from pydantic import BaseModel
 from typing import Literal, Optional
-from decimal import Decimal
 
 # ── Countries ────────────────────────────────────────────────────────────────
 
@@ -33,7 +32,7 @@ class InstituteCreate(BaseModel):
     ownership: Optional[InstituteOwnership] = None
     city: Optional[str] = None
     global_ranking: Optional[int] = None
-    living_expense_est: Optional[Decimal] = None
+    living_expense_est: Optional[float] = None
     living_expense_cur: Optional[str] = None
     has_dormitory: bool = False
     services: Optional[str] = None
@@ -48,7 +47,7 @@ class InstituteUpdate(BaseModel):
     ownership: Optional[InstituteOwnership] = None
     city: Optional[str] = None
     global_ranking: Optional[int] = None
-    living_expense_est: Optional[Decimal] = None
+    living_expense_est: Optional[float] = None
     living_expense_cur: Optional[str] = None
     has_dormitory: Optional[bool] = None
     services: Optional[str] = None
