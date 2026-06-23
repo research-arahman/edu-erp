@@ -15,6 +15,7 @@ import Industries from './pages/Industries';
 import Inquiries from './pages/Inquiries';
 import Tasks from './pages/Tasks';
 import Accounting from './pages/Accounting';
+import AdmissionTemplates from './pages/AdmissionTemplates';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="students" element={<Students />} />
           <Route path="institutes" element={<Institutes />} />
           <Route path="programs" element={<Programs />} />
+          <Route path="admission-templates" element={<AdmissionTemplates />} />
           <Route path="applications" element={<Applications />} />
           <Route path="candidates" element={<Candidates />} />
           <Route path="employers" element={<Employers />} />

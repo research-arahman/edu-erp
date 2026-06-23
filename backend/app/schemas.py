@@ -93,3 +93,37 @@ class ProgramSessionCreate(BaseModel):
     application_deadline: Optional[str] = None
     seats: Optional[int] = None
     is_open: bool = True
+
+
+# ── Admission Templates ───────────────────────────────────────────────────────
+
+class AdmissionTemplateCreate(BaseModel):
+    country_id: int
+    level_category: str
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class AdmissionTemplateUpdate(BaseModel):
+    country_id: Optional[int] = None
+    level_category: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ── Admission Steps ───────────────────────────────────────────────────────────
+
+class AdmissionStepCreate(BaseModel):
+    step_order: int
+    title: str
+    description: Optional[str] = None
+    timeframe: Optional[str] = None
+
+
+class AdmissionStepUpdate(BaseModel):
+    step_order: Optional[int] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    timeframe: Optional[str] = None

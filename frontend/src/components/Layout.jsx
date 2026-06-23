@@ -11,6 +11,7 @@ const NAV = [
       { to: '/students', label: 'Students' },
       { to: '/institutes', label: 'Institutes' },
       { to: '/programs', label: 'Programs' },
+      { to: '/admission-templates', label: 'Admission Templates' },
       { to: '/applications', label: 'Applications' },
     ],
   },
