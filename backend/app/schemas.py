@@ -176,3 +176,53 @@ class EmployerUpdate(BaseModel):
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+
+class JobCreate(BaseModel):
+    employer_id: str
+    title: str
+    industry_field_id: Optional[int] = None
+    description: Optional[str] = None
+    employment_type: Optional[str] = None
+    location: Optional[str] = None
+    salary_min: Optional[float] = None
+    salary_max: Optional[float] = None
+    salary_currency: str = 'JPY'
+    salary_period: str = 'monthly'
+    req_language_qual_id: Optional[int] = None
+    req_language_level: Optional[str] = None
+    req_skills_qual_id: Optional[int] = None
+    req_skills_detail: Optional[str] = None
+    min_experience_years: Optional[int] = None
+    age_min: Optional[int] = None
+    age_max: Optional[int] = None
+    other_requirements: Optional[str] = None
+    start_period: Optional[str] = None
+    positions_available: Optional[int] = None
+    is_open: bool = True
+
+
+class JobUpdate(BaseModel):
+    employer_id: Optional[str] = None
+    title: Optional[str] = None
+    industry_field_id: Optional[int] = None
+    description: Optional[str] = None
+    employment_type: Optional[str] = None
+    location: Optional[str] = None
+    salary_min: Optional[float] = None
+    salary_max: Optional[float] = None
+    salary_currency: Optional[str] = None
+    salary_period: Optional[str] = None
+    req_language_qual_id: Optional[int] = None
+    req_language_level: Optional[str] = None
+    req_skills_qual_id: Optional[int] = None
+    req_skills_detail: Optional[str] = None
+    min_experience_years: Optional[int] = None
+    age_min: Optional[int] = None
+    age_max: Optional[int] = None
+    other_requirements: Optional[str] = None
+    start_period: Optional[str] = None
+    positions_available: Optional[int] = None
+    is_open: Optional[bool] = None
