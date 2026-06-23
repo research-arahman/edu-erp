@@ -178,6 +178,26 @@ class EmployerUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+# ── Industries ────────────────────────────────────────────────────────────────
+
+class IndustryCreate(BaseModel):
+    name: str
+    country_id: Optional[int] = None
+    category_code: Optional[str] = None
+    is_ssw: bool = False
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class IndustryUpdate(BaseModel):
+    name: Optional[str] = None
+    country_id: Optional[int] = None
+    category_code: Optional[str] = None
+    is_ssw: Optional[bool] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
 class JobCreate(BaseModel):
