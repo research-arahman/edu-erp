@@ -3,7 +3,10 @@ import { NavLink, Outlet } from 'react-router-dom';
 const NAV = [
   {
     group: null,
-    items: [{ to: '/', label: 'Dashboard', end: true }],
+    items: [
+      { to: '/', label: 'Dashboard', end: true },
+      { to: '/explorer', label: 'Destination Explorer' },
+    ],
   },
   {
     group: 'Education',

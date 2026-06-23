@@ -16,6 +16,7 @@ import Inquiries from './pages/Inquiries';
 import Tasks from './pages/Tasks';
 import Accounting from './pages/Accounting';
 import AdmissionTemplates from './pages/AdmissionTemplates';
+import DestinationExplorer from './pages/DestinationExplorer';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
+          <Route path="explorer" element={<DestinationExplorer />} />
           <Route path="students" element={<Students />} />
           <Route path="institutes" element={<Institutes />} />
           <Route path="programs" element={<Programs />} />
