@@ -133,3 +133,46 @@ class AdmissionStepUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     timeframe: Optional[str] = None
+
+
+# ── Employers ─────────────────────────────────────────────────────────────────
+
+CompanySize = Literal["small", "medium", "large"]
+
+
+class EmployerCreate(BaseModel):
+    name: str
+    country_id: int
+    industry_field_id: Optional[int] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    company_size: Optional[CompanySize] = None
+    website: Optional[str] = None
+    is_ssw_registered: bool = False
+    accepts_foreign: bool = True
+    housing_support: bool = False
+    support_services: Optional[str] = None
+    notes: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    is_active: bool = True
+
+
+class EmployerUpdate(BaseModel):
+    name: Optional[str] = None
+    country_id: Optional[int] = None
+    industry_field_id: Optional[int] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    company_size: Optional[CompanySize] = None
+    website: Optional[str] = None
+    is_ssw_registered: Optional[bool] = None
+    accepts_foreign: Optional[bool] = None
+    housing_support: Optional[bool] = None
+    support_services: Optional[str] = None
+    notes: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    is_active: Optional[bool] = None
