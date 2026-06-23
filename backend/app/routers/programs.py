@@ -76,7 +76,7 @@ def list_sessions(program_id: str):
 @router.post("/programs/{program_id}/sessions", status_code=201)
 def create_session(program_id: str, body: ProgramSessionCreate):
     payload = body.model_dump(exclude_none=True)
-    payload["program_id"] = int(program_id)
+    payload["program_id"] = program_id
     result = supabase.table("program_sessions").insert(payload).execute()
     return result.data[0]
 

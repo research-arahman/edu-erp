@@ -68,6 +68,9 @@ class ProgramCreate(BaseModel):
     enrollment_cost: Optional[float] = None
     currency: Optional[str] = None
     duration_months: Optional[int] = None
+    language_test_accepted: Optional[str] = None
+    min_language_level: Optional[str] = None
+    moi_accepted: Optional[bool] = False
     is_active: bool = True
 
 
@@ -82,6 +85,9 @@ class ProgramUpdate(BaseModel):
     enrollment_cost: Optional[float] = None
     currency: Optional[str] = None
     duration_months: Optional[int] = None
+    language_test_accepted: Optional[str] = None
+    min_language_level: Optional[str] = None
+    moi_accepted: Optional[bool] = None
     is_active: Optional[bool] = None
 
 

@@ -14,6 +14,9 @@ const EMPTY_FORM = {
   enrollment_cost: '',
   currency: '',
   duration_months: '',
+  language_test_accepted: '',
+  min_language_level: '',
+  moi_accepted: false,
 };
 
 const LEVEL_CATEGORY_META = {
@@ -31,14 +34,17 @@ function buildPayload(form) {
     institute_id: form.institute_id,
     level_category: form.level_category,
     course_name: form.course_name.trim(),
+    moi_accepted: form.moi_accepted,
   };
-  if (form.level_label.trim())   p.level_label     = form.level_label.trim();
-  if (form.department.trim())    p.department       = form.department.trim();
-  if (form.tuition_fee !== '')   p.tuition_fee      = Number(form.tuition_fee);
-  if (form.admission_cost !== '') p.admission_cost  = Number(form.admission_cost);
-  if (form.enrollment_cost !== '') p.enrollment_cost = Number(form.enrollment_cost);
-  if (form.currency.trim())      p.currency         = form.currency.trim().toUpperCase();
-  if (form.duration_months !== '') p.duration_months = Number(form.duration_months);
+  if (form.level_label.trim())            p.level_label             = form.level_label.trim();
+  if (form.department.trim())             p.department               = form.department.trim();
+  if (form.tuition_fee !== '')            p.tuition_fee              = Number(form.tuition_fee);
+  if (form.admission_cost !== '')         p.admission_cost           = Number(form.admission_cost);
+  if (form.enrollment_cost !== '')        p.enrollment_cost          = Number(form.enrollment_cost);
+  if (form.currency.trim())               p.currency                 = form.currency.trim().toUpperCase();
+  if (form.duration_months !== '')        p.duration_months          = Number(form.duration_months);
+  if (form.language_test_accepted.trim()) p.language_test_accepted   = form.language_test_accepted.trim();
+  if (form.min_language_level.trim())     p.min_language_level       = form.min_language_level.trim();
   return p;
 }
 
@@ -123,16 +129,19 @@ export default function Programs() {
 
   function openEdit(prog) {
     setForm({
-      institute_id:    prog.institute_id?.toString() ?? '',
-      level_category:  prog.level_category  ?? '',
-      level_label:     prog.level_label     ?? '',
-      department:      prog.department      ?? '',
-      course_name:     prog.course_name     ?? '',
-      tuition_fee:     prog.tuition_fee?.toString()     ?? '',
-      admission_cost:  prog.admission_cost?.toString()  ?? '',
-      enrollment_cost: prog.enrollment_cost?.toString() ?? '',
-      currency:        prog.currency        ?? '',
-      duration_months: prog.duration_months?.toString() ?? '',
+      institute_id:           prog.institute_id?.toString()     ?? '',
+      level_category:         prog.level_category               ?? '',
+      level_label:            prog.level_label                  ?? '',
+      department:             prog.department                   ?? '',
+      course_name:            prog.course_name                  ?? '',
+      tuition_fee:            prog.tuition_fee?.toString()      ?? '',
+      admission_cost:         prog.admission_cost?.toString()   ?? '',
+      enrollment_cost:        prog.enrollment_cost?.toString()  ?? '',
+      currency:               prog.currency                     ?? '',
+      duration_months:        prog.duration_months?.toString()  ?? '',
+      language_test_accepted: prog.language_test_accepted       ?? '',
+      min_language_level:     prog.min_language_level           ?? '',
+      moi_accepted:           prog.moi_accepted === true,
     });
     setFormError(null);
     setSelected(prog);
@@ -500,6 +509,53 @@ export default function Programs() {
                   />
                 </Field>
 
+                {/* Requirements section */}
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Requirements
+                  </h4>
+
+                  <Field label="Language Test Accepted">
+                    <select
+                      className={INPUT}
+                      name="language_test_accepted"
+                      value={form.language_test_accepted}
+                      onChange={handleChange}
+                      disabled={saving}
+                    >
+                      <option value="">— none / not specified —</option>
+                      {['IELTS','TOEFL','JLPT','JFT-Basic','Duolingo','PTE','TOEIC','MOI Accepted','Any','None'].map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Minimum Language Level">
+                    <input
+                      className={INPUT}
+                      name="min_language_level"
+                      value={form.min_language_level}
+                      onChange={handleChange}
+                      disabled={saving}
+                      placeholder="e.g. IELTS 6.5, N2, TOEFL 80"
+                    />
+                  </Field>
+
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="moi_accepted"
+                      checked={form.moi_accepted}
+                      onChange={handleChange}
+                      disabled={saving}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600"
+                    />
+                    <span className="text-sm text-gray-700">
+                      MOI (Medium of Instruction) letter accepted in lieu of a test
+                    </span>
+                  </label>
+                </div>
+
                 {/* Sessions section — edit mode only */}
                 {panel === 'edit' && (
                   <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -549,48 +605,55 @@ export default function Programs() {
                     {sessionError && (
                       <p className="mb-2 text-xs text-red-600">{sessionError}</p>
                     )}
-                    <div className="space-y-2">
-                      <input
-                        className={INPUT + ' text-xs'}
-                        name="session_name"
-                        value={sessionForm.session_name}
-                        onChange={handleSessionChange}
-                        placeholder="Session name (e.g. April 2025)"
-                        disabled={addingSession}
-                      />
+                    <div className="space-y-3">
+                      <Field label="Session Name" required>
+                        <input
+                          className={INPUT + ' text-xs'}
+                          name="session_name"
+                          value={sessionForm.session_name}
+                          onChange={handleSessionChange}
+                          placeholder="e.g. April 2025"
+                          disabled={addingSession}
+                        />
+                      </Field>
                       <div className="grid grid-cols-2 gap-2">
-                        <input
-                          className={INPUT + ' text-xs'}
-                          type="date"
-                          name="start_date"
-                          value={sessionForm.start_date}
-                          onChange={handleSessionChange}
-                          disabled={addingSession}
-                          title="Start date"
-                        />
-                        <input
-                          className={INPUT + ' text-xs'}
-                          type="date"
-                          name="application_deadline"
-                          value={sessionForm.application_deadline}
-                          onChange={handleSessionChange}
-                          disabled={addingSession}
-                          title="Application deadline"
-                        />
+                        <Field label="Start Date">
+                          <input
+                            className={INPUT + ' text-xs'}
+                            type="date"
+                            name="start_date"
+                            value={sessionForm.start_date}
+                            onChange={handleSessionChange}
+                            disabled={addingSession}
+                          />
+                        </Field>
+                        <Field label="Application Deadline">
+                          <input
+                            className={INPUT + ' text-xs'}
+                            type="date"
+                            name="application_deadline"
+                            value={sessionForm.application_deadline}
+                            onChange={handleSessionChange}
+                            disabled={addingSession}
+                          />
+                        </Field>
                       </div>
                       <div className="flex items-center gap-3">
-                        <input
-                          className={INPUT + ' text-xs'}
-                          type="number"
-                          name="seats"
-                          value={sessionForm.seats}
-                          onChange={handleSessionChange}
-                          placeholder="Seats"
-                          min={1}
-                          disabled={addingSession}
-                          style={{ maxWidth: '90px' }}
-                        />
-                        <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                        <div>
+                          <span className={LABEL}>Seats</span>
+                          <input
+                            className={INPUT + ' text-xs'}
+                            type="number"
+                            name="seats"
+                            value={sessionForm.seats}
+                            onChange={handleSessionChange}
+                            placeholder="—"
+                            min={1}
+                            disabled={addingSession}
+                            style={{ maxWidth: '90px' }}
+                          />
+                        </div>
+                        <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer mt-4">
                           <input
                             type="checkbox"
                             name="is_open"
@@ -605,7 +668,7 @@ export default function Programs() {
                           type="button"
                           onClick={handleAddSession}
                           disabled={addingSession}
-                          className="ml-auto rounded-md bg-gray-700 px-3 py-1.5 text-xs font-medium text-white
+                          className="ml-auto mt-4 rounded-md bg-gray-700 px-3 py-1.5 text-xs font-medium text-white
                                      hover:bg-gray-800 disabled:opacity-50"
                         >
                           {addingSession ? 'Adding…' : '+ Add Session'}
