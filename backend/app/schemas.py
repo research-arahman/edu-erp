@@ -338,6 +338,26 @@ class CandidateCreate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     purpose: Optional[str] = None
+    # Passport
+    passport_number: Optional[str] = None
+    passport_issue_date: Optional[str] = None
+    passport_expiry: Optional[str] = None
+    passport_country: Optional[str] = None
+    # Financial / income
+    annual_income: Optional[float] = None
+    income_currency: Optional[str] = None
+    income_source: Optional[str] = None
+    # Work background
+    highest_qualification: Optional[str] = None
+    total_experience_years: Optional[int] = None
+    work_history: Optional[str] = None
+    current_occupation: Optional[str] = None
+    # Language proficiency
+    language_qual_id: Optional[int] = None
+    language_level: Optional[str] = None
+    # Skills proficiency
+    skills_qual_id: Optional[int] = None
+    skills_detail: Optional[str] = None
     target_country_id: Optional[int] = None
     target_industry_id: Optional[int] = None
     target_employer_id: Optional[str] = None
@@ -355,6 +375,26 @@ class CandidateUpdate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     purpose: Optional[str] = None
+    # Passport
+    passport_number: Optional[str] = None
+    passport_issue_date: Optional[str] = None
+    passport_expiry: Optional[str] = None
+    passport_country: Optional[str] = None
+    # Financial / income
+    annual_income: Optional[float] = None
+    income_currency: Optional[str] = None
+    income_source: Optional[str] = None
+    # Work background
+    highest_qualification: Optional[str] = None
+    total_experience_years: Optional[int] = None
+    work_history: Optional[str] = None
+    current_occupation: Optional[str] = None
+    # Language proficiency
+    language_qual_id: Optional[int] = None
+    language_level: Optional[str] = None
+    # Skills proficiency
+    skills_qual_id: Optional[int] = None
+    skills_detail: Optional[str] = None
     target_country_id: Optional[int] = None
     target_industry_id: Optional[int] = None
     target_employer_id: Optional[str] = None

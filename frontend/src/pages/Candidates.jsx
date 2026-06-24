@@ -5,20 +5,40 @@ import EmploymentSelector from '../components/EmploymentSelector';
 // ── constants ─────────────────────────────────────────────────────────────────
 
 const EMPTY_FORM = {
-  full_name:          '',
-  email:              '',
-  phone:              '',
-  date_of_birth:      '',
-  gender:             '',
-  nationality:        'Bangladeshi',
-  address:            '',
-  purpose:            '',
-  status:             'active',
+  // Core identity
+  full_name:              '',
+  email:                  '',
+  phone:                  '',
+  date_of_birth:          '',
+  gender:                 '',
+  nationality:            'Bangladeshi',
+  address:                '',
+  purpose:                '',
+  status:                 'active',
+  // Passport
+  passport_number:        '',
+  passport_country:       '',
+  passport_issue_date:    '',
+  passport_expiry:        '',
+  // Financial
+  annual_income:          '',
+  income_currency:        'BDT',
+  income_source:          '',
+  // Work background
+  current_occupation:     '',
+  total_experience_years: '',
+  highest_qualification:  '',
+  work_history:           '',
+  // Language & Skills
+  language_qual_id:       '',
+  language_level:         '',
+  skills_qual_id:         '',
+  skills_detail:          '',
   // target destination (managed by EmploymentSelector)
-  target_country_id:  null,
-  target_industry_id: null,
-  target_employer_id: null,
-  target_job_id:      null,
+  target_country_id:      null,
+  target_industry_id:     null,
+  target_employer_id:     null,
+  target_job_id:          null,
 };
 
 const STATUS_LABELS = {
@@ -33,6 +53,8 @@ function buildPayload(form) {
     full_name: form.full_name.trim(),
     status:    form.status || 'active',
   };
+
+  // Core
   if (form.email.trim())       p.email         = form.email.trim();
   if (form.phone.trim())       p.phone         = form.phone.trim();
   if (form.date_of_birth)      p.date_of_birth = form.date_of_birth;
@@ -40,6 +62,30 @@ function buildPayload(form) {
   if (form.nationality.trim()) p.nationality   = form.nationality.trim();
   if (form.address.trim())     p.address       = form.address.trim();
   if (form.purpose.trim())     p.purpose       = form.purpose.trim();
+
+  // Passport
+  if (form.passport_number.trim())    p.passport_number    = form.passport_number.trim();
+  if (form.passport_country.trim())   p.passport_country   = form.passport_country.trim();
+  if (form.passport_issue_date)       p.passport_issue_date = form.passport_issue_date;
+  if (form.passport_expiry)           p.passport_expiry    = form.passport_expiry;
+
+  // Financial
+  if (form.annual_income !== '')      p.annual_income      = Number(form.annual_income);
+  if (form.income_currency.trim())    p.income_currency    = form.income_currency.trim();
+  if (form.income_source.trim())      p.income_source      = form.income_source.trim();
+
+  // Work background
+  if (form.current_occupation.trim())   p.current_occupation   = form.current_occupation.trim();
+  if (form.total_experience_years !== '') p.total_experience_years = Number(form.total_experience_years);
+  if (form.highest_qualification.trim()) p.highest_qualification = form.highest_qualification.trim();
+  if (form.work_history.trim())         p.work_history         = form.work_history.trim();
+
+  // Language & Skills
+  if (form.language_qual_id !== '')   p.language_qual_id   = Number(form.language_qual_id);
+  if (form.language_level.trim())     p.language_level     = form.language_level.trim();
+  if (form.skills_qual_id !== '')     p.skills_qual_id     = Number(form.skills_qual_id);
+  if (form.skills_detail.trim())      p.skills_detail      = form.skills_detail.trim();
+
   // target_* ids — always write current selector state (null clears on edit)
   p.target_country_id  = form.target_country_id  != null ? Number(form.target_country_id)  : null;
   p.target_industry_id = form.target_industry_id != null ? Number(form.target_industry_id) : null;
@@ -69,6 +115,16 @@ function Field({ label, required, children }) {
   );
 }
 
+function SectionDivider({ title }) {
+  return (
+    <div className="border-t border-gray-100 pt-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+        {title}
+      </p>
+    </div>
+  );
+}
+
 function StatusBadge({ status }) {
   const palette = {
     active:   'bg-green-100 text-green-700',
@@ -92,6 +148,7 @@ function StatusBadge({ status }) {
 export default function Candidates() {
   const [candidates,   setCandidates]   = useState([]);
   const [countries,    setCountries]    = useState([]);
+  const [qualTypes,    setQualTypes]    = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState(null);
 
@@ -100,8 +157,6 @@ export default function Candidates() {
   const [form,         setForm]         = useState(EMPTY_FORM);
   const [saving,       setSaving]       = useState(false);
   const [formError,    setFormError]    = useState(null);
-  // Incrementing key forces EmploymentSelector to remount each time the panel opens,
-  // resetting internal cascade state cleanly.
   const [selectorKey,  setSelectorKey]  = useState(0);
 
   // ── data loading ───────────────────────────────────────────────────────────
@@ -111,16 +166,23 @@ export default function Candidates() {
   }
 
   useEffect(() => {
-    Promise.all([api.get('/candidates'), api.get('/countries')])
-      .then(([cands, cntrs]) => {
+    Promise.all([
+      api.get('/candidates'),
+      api.get('/countries'),
+      api.get('/qualification-types'),
+    ])
+      .then(([cands, cntrs, quals]) => {
         setCandidates(cands);
         setCountries(cntrs);
+        setQualTypes(quals);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
-  const countryMap = Object.fromEntries(countries.map((c) => [c.id, c.name]));
+  const countryMap   = Object.fromEntries(countries.map((c) => [c.id, c.name]));
+  const langQuals    = qualTypes.filter((q) => q.category === 'language');
+  const skillsQuals  = qualTypes.filter((q) => q.category === 'skills');
 
   // ── panel helpers ──────────────────────────────────────────────────────────
 
@@ -134,19 +196,40 @@ export default function Candidates() {
 
   function openEdit(candidate) {
     setForm({
-      full_name:          candidate.full_name          ?? '',
-      email:              candidate.email              ?? '',
-      phone:              candidate.phone              ?? '',
-      date_of_birth:      candidate.date_of_birth      ?? '',
-      gender:             candidate.gender             ?? '',
-      nationality:        candidate.nationality        ?? 'Bangladeshi',
-      address:            candidate.address            ?? '',
-      purpose:            candidate.purpose            ?? '',
-      status:             candidate.status             ?? 'active',
-      target_country_id:  candidate.target_country_id  ?? null,
-      target_industry_id: candidate.target_industry_id ?? null,
-      target_employer_id: candidate.target_employer_id ?? null,
-      target_job_id:      candidate.target_job_id      ?? null,
+      // Core identity
+      full_name:              candidate.full_name              ?? '',
+      email:                  candidate.email                  ?? '',
+      phone:                  candidate.phone                  ?? '',
+      date_of_birth:          candidate.date_of_birth          ?? '',
+      gender:                 candidate.gender                 ?? '',
+      nationality:            candidate.nationality            ?? 'Bangladeshi',
+      address:                candidate.address                ?? '',
+      purpose:                candidate.purpose                ?? '',
+      status:                 candidate.status                 ?? 'active',
+      // Passport
+      passport_number:        candidate.passport_number        ?? '',
+      passport_country:       candidate.passport_country       ?? '',
+      passport_issue_date:    candidate.passport_issue_date    ?? '',
+      passport_expiry:        candidate.passport_expiry        ?? '',
+      // Financial
+      annual_income:          candidate.annual_income          != null ? String(candidate.annual_income) : '',
+      income_currency:        candidate.income_currency        ?? 'BDT',
+      income_source:          candidate.income_source          ?? '',
+      // Work background
+      current_occupation:     candidate.current_occupation     ?? '',
+      total_experience_years: candidate.total_experience_years != null ? String(candidate.total_experience_years) : '',
+      highest_qualification:  candidate.highest_qualification  ?? '',
+      work_history:           candidate.work_history           ?? '',
+      // Language & Skills (ids as strings for <select> value)
+      language_qual_id:       candidate.language_qual_id       != null ? String(candidate.language_qual_id) : '',
+      language_level:         candidate.language_level         ?? '',
+      skills_qual_id:         candidate.skills_qual_id         != null ? String(candidate.skills_qual_id) : '',
+      skills_detail:          candidate.skills_detail          ?? '',
+      // target destination
+      target_country_id:      candidate.target_country_id      ?? null,
+      target_industry_id:     candidate.target_industry_id     ?? null,
+      target_employer_id:     candidate.target_employer_id     ?? null,
+      target_job_id:          candidate.target_job_id          ?? null,
     });
     setFormError(null);
     setSelected(candidate);
@@ -167,7 +250,6 @@ export default function Candidates() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  // Called by EmploymentSelector on every selection change
   function handleSelectorChange(sel) {
     setForm((prev) => ({
       ...prev,
@@ -315,7 +397,7 @@ export default function Candidates() {
             onClick={closePanel}
           />
 
-          {/* Drawer — wider to fit the selector + roadmap */}
+          {/* Drawer */}
           <div className="fixed inset-y-0 right-0 z-50 flex w-[560px] flex-col bg-white shadow-2xl">
 
             {/* Drawer header */}
@@ -345,7 +427,7 @@ export default function Candidates() {
             >
               <div className="flex-1 space-y-4 px-6 py-5">
 
-                {/* ── Core fields ─────────────────────────────────────────── */}
+                {/* ── 1. Core identity ────────────────────────────────────── */}
 
                 <Field label="Full Name" required>
                   <input
@@ -460,7 +542,206 @@ export default function Candidates() {
                   />
                 </Field>
 
-                {/* ── Target Destination ──────────────────────────────────── */}
+                {/* ── 2. Passport ─────────────────────────────────────────── */}
+                <SectionDivider title="Passport" />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Passport Number">
+                    <input
+                      className={INPUT}
+                      name="passport_number"
+                      value={form.passport_number}
+                      onChange={handleChange}
+                      disabled={saving}
+                      placeholder="e.g. AB1234567"
+                    />
+                  </Field>
+                  <Field label="Issuing Country">
+                    <input
+                      className={INPUT}
+                      name="passport_country"
+                      value={form.passport_country}
+                      onChange={handleChange}
+                      disabled={saving}
+                      placeholder="e.g. Bangladesh"
+                    />
+                  </Field>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Issue Date">
+                    <input
+                      className={INPUT}
+                      type="date"
+                      name="passport_issue_date"
+                      value={form.passport_issue_date}
+                      onChange={handleChange}
+                      disabled={saving}
+                    />
+                  </Field>
+                  <Field label="Expiry Date">
+                    <input
+                      className={INPUT}
+                      type="date"
+                      name="passport_expiry"
+                      value={form.passport_expiry}
+                      onChange={handleChange}
+                      disabled={saving}
+                    />
+                  </Field>
+                </div>
+
+                {/* ── 3. Financial ─────────────────────────────────────────── */}
+                <SectionDivider title="Financial" />
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2">
+                    <Field label="Annual Income">
+                      <input
+                        className={INPUT}
+                        type="number"
+                        min="0"
+                        step="any"
+                        name="annual_income"
+                        value={form.annual_income}
+                        onChange={handleChange}
+                        disabled={saving}
+                        placeholder="0"
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Currency">
+                    <input
+                      className={INPUT}
+                      name="income_currency"
+                      value={form.income_currency}
+                      onChange={handleChange}
+                      disabled={saving}
+                      placeholder="BDT"
+                    />
+                  </Field>
+                </div>
+
+                <Field label="Income Source">
+                  <input
+                    className={INPUT}
+                    name="income_source"
+                    value={form.income_source}
+                    onChange={handleChange}
+                    disabled={saving}
+                    placeholder="e.g. Business, Employment, Remittance…"
+                  />
+                </Field>
+
+                {/* ── 4. Work Background ──────────────────────────────────── */}
+                <SectionDivider title="Work Background" />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Current Occupation">
+                    <input
+                      className={INPUT}
+                      name="current_occupation"
+                      value={form.current_occupation}
+                      onChange={handleChange}
+                      disabled={saving}
+                      placeholder="e.g. Garment Worker"
+                    />
+                  </Field>
+                  <Field label="Total Experience (years)">
+                    <input
+                      className={INPUT}
+                      type="number"
+                      min="0"
+                      name="total_experience_years"
+                      value={form.total_experience_years}
+                      onChange={handleChange}
+                      disabled={saving}
+                      placeholder="0"
+                    />
+                  </Field>
+                </div>
+
+                <Field label="Highest Qualification">
+                  <input
+                    className={INPUT}
+                    name="highest_qualification"
+                    value={form.highest_qualification}
+                    onChange={handleChange}
+                    disabled={saving}
+                    placeholder="e.g. HSC, Diploma in Engineering, B.Sc."
+                  />
+                </Field>
+
+                <Field label="Work History">
+                  <textarea
+                    className={INPUT}
+                    name="work_history"
+                    value={form.work_history}
+                    onChange={handleChange}
+                    disabled={saving}
+                    rows={3}
+                    placeholder="Brief summary of past roles and employers…"
+                  />
+                </Field>
+
+                {/* ── 5. Language & Skills ─────────────────────────────────── */}
+                <SectionDivider title="Language & Skills" />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Language Qualification">
+                    <select
+                      className={INPUT}
+                      name="language_qual_id"
+                      value={form.language_qual_id}
+                      onChange={handleChange}
+                      disabled={saving}
+                    >
+                      <option value="">— none —</option>
+                      {langQuals.map((q) => (
+                        <option key={q.id} value={String(q.id)}>{q.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Level Achieved">
+                    <input
+                      className={INPUT}
+                      name="language_level"
+                      value={form.language_level}
+                      onChange={handleChange}
+                      disabled={saving}
+                      placeholder="e.g. N4, A2, IELTS 6.0"
+                    />
+                  </Field>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Skills Qualification">
+                    <select
+                      className={INPUT}
+                      name="skills_qual_id"
+                      value={form.skills_qual_id}
+                      onChange={handleChange}
+                      disabled={saving}
+                    >
+                      <option value="">— none —</option>
+                      {skillsQuals.map((q) => (
+                        <option key={q.id} value={String(q.id)}>{q.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Skills Detail">
+                    <input
+                      className={INPUT}
+                      name="skills_detail"
+                      value={form.skills_detail}
+                      onChange={handleChange}
+                      disabled={saving}
+                      placeholder="e.g. Passed SSW Nursing Care Test"
+                    />
+                  </Field>
+                </div>
+
+                {/* ── 6. Target Destination ───────────────────────────────── */}
                 <div className="border-t border-gray-100 pt-4">
                   <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
                     Target Destination
@@ -478,7 +759,7 @@ export default function Candidates() {
                   />
                 </div>
 
-                {/* ── Placement Roadmap ─────────────────────────────────────── */}
+                {/* ── 7. Placement Roadmap ─────────────────────────────────── */}
                 <div className="border-t border-gray-100 pt-4">
                   <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
                     Placement Roadmap
