@@ -282,6 +282,13 @@ class StudentUpdate(BaseModel):
     status: Optional[str] = None
 
 
+# ── Student Step Progress ─────────────────────────────────────────────────────
+
+class StepProgressUpdate(BaseModel):
+    status: Literal["pending", "current", "done"]
+    note: Optional[str] = None
+
+
 # ── Candidates ────────────────────────────────────────────────────────────────
 
 class CandidateCreate(BaseModel):

@@ -493,6 +493,7 @@ export default function Students() {
                       <AdmissionRoadmap
                         country_id={form.target_country_id}
                         level_category={form._level_category}
+                        studentId={panel === 'edit' ? selected?.id : undefined}
                       />
                     ) : (
                       <p className="text-xs text-gray-400">
