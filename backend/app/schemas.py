@@ -280,3 +280,39 @@ class StudentUpdate(BaseModel):
     target_program_id: Optional[str] = None
     target_session_id: Optional[str] = None
     status: Optional[str] = None
+
+
+# ── Candidates ────────────────────────────────────────────────────────────────
+
+class CandidateCreate(BaseModel):
+    full_name: str
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    nationality: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    purpose: Optional[str] = None
+    target_country_id: Optional[int] = None
+    target_industry_id: Optional[int] = None
+    target_employer_id: Optional[str] = None
+    target_job_id: Optional[str] = None
+    target_start_period: Optional[str] = None
+    status: Optional[str] = None
+
+
+class CandidateUpdate(BaseModel):
+    full_name: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    nationality: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    purpose: Optional[str] = None
+    target_country_id: Optional[int] = None
+    target_industry_id: Optional[int] = None
+    target_employer_id: Optional[str] = None
+    target_job_id: Optional[str] = None
+    target_start_period: Optional[str] = None
+    status: Optional[str] = None
