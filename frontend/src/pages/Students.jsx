@@ -6,21 +6,40 @@ import AdmissionRoadmap from '../components/AdmissionRoadmap';
 // ── constants ─────────────────────────────────────────────────────────────────
 
 const EMPTY_FORM = {
-  full_name:           '',
-  email:               '',
-  phone:               '',
-  date_of_birth:       '',
-  gender:              '',
-  nationality:         'Bangladeshi',
-  address:             '',
-  purpose:             '',
-  status:              'active',
+  full_name:              '',
+  email:                  '',
+  phone:                  '',
+  date_of_birth:          '',
+  gender:                 '',
+  nationality:            'Bangladeshi',
+  address:                '',
+  purpose:                '',
+  status:                 'active',
+  // Passport
+  passport_number:        '',
+  passport_issue_date:    '',
+  passport_expiry:        '',
+  passport_country:       '',
+  // Financial
+  annual_income:          '',
+  income_currency:        '',
+  income_source:          '',
+  // Supporter / sponsor
+  supporter_name:         '',
+  supporter_relation:     '',
+  supporter_occupation:   '',
+  supporter_income:       '',
+  supporter_currency:     '',
+  // Academic & career
+  highest_qualification:  '',
+  academic_summary:       '',
+  career_summary:         '',
   // target destination (managed by EducationSelector)
-  target_country_id:   null,
-  target_institute_id: null,
-  target_program_id:   null,
-  target_session_id:   null,
-  _level_category:     null, // transient — not saved to DB
+  target_country_id:      null,
+  target_institute_id:    null,
+  target_program_id:      null,
+  target_session_id:      null,
+  _level_category:        null, // transient — not saved to DB
 };
 
 const STATUS_LABELS = {
@@ -42,6 +61,25 @@ function buildPayload(form) {
   if (form.nationality.trim()) p.nationality   = form.nationality.trim();
   if (form.address.trim())     p.address       = form.address.trim();
   if (form.purpose.trim())     p.purpose       = form.purpose.trim();
+  // Passport
+  if (form.passport_number.trim())       p.passport_number     = form.passport_number.trim();
+  if (form.passport_issue_date)          p.passport_issue_date = form.passport_issue_date;
+  if (form.passport_expiry)              p.passport_expiry     = form.passport_expiry;
+  if (form.passport_country.trim())      p.passport_country    = form.passport_country.trim();
+  // Financial
+  if (form.annual_income !== '')         p.annual_income       = Number(form.annual_income);
+  if (form.income_currency.trim())       p.income_currency     = form.income_currency.trim();
+  if (form.income_source.trim())         p.income_source       = form.income_source.trim();
+  // Supporter / sponsor
+  if (form.supporter_name.trim())        p.supporter_name      = form.supporter_name.trim();
+  if (form.supporter_relation.trim())    p.supporter_relation  = form.supporter_relation.trim();
+  if (form.supporter_occupation.trim())  p.supporter_occupation = form.supporter_occupation.trim();
+  if (form.supporter_income !== '')      p.supporter_income    = Number(form.supporter_income);
+  if (form.supporter_currency.trim())    p.supporter_currency  = form.supporter_currency.trim();
+  // Academic & career
+  if (form.highest_qualification.trim()) p.highest_qualification = form.highest_qualification.trim();
+  if (form.academic_summary.trim())      p.academic_summary    = form.academic_summary.trim();
+  if (form.career_summary.trim())        p.career_summary      = form.career_summary.trim();
   // target_* ids — always write current selector state (null clears on edit)
   p.target_country_id   = form.target_country_id   != null ? Number(form.target_country_id) : null;
   p.target_institute_id = form.target_institute_id || null;
@@ -137,20 +175,40 @@ export default function Students() {
 
   function openEdit(student) {
     setForm({
-      full_name:           student.full_name           ?? '',
-      email:               student.email               ?? '',
-      phone:               student.phone               ?? '',
-      date_of_birth:       student.date_of_birth       ?? '',
-      gender:              student.gender              ?? '',
-      nationality:         student.nationality         ?? 'Bangladeshi',
-      address:             student.address             ?? '',
-      purpose:             student.purpose             ?? '',
-      status:              student.status              ?? 'active',
-      target_country_id:   student.target_country_id   ?? null,
-      target_institute_id: student.target_institute_id ?? null,
-      target_program_id:   student.target_program_id   ?? null,
-      target_session_id:   student.target_session_id   ?? null,
-      _level_category:     null, // EducationSelector will report this after loading
+      full_name:              student.full_name              ?? '',
+      email:                  student.email                  ?? '',
+      phone:                  student.phone                  ?? '',
+      date_of_birth:          student.date_of_birth          ?? '',
+      gender:                 student.gender                 ?? '',
+      nationality:            student.nationality            ?? 'Bangladeshi',
+      address:                student.address                ?? '',
+      purpose:                student.purpose                ?? '',
+      status:                 student.status                 ?? 'active',
+      // Passport
+      passport_number:        student.passport_number        ?? '',
+      passport_issue_date:    student.passport_issue_date    ?? '',
+      passport_expiry:        student.passport_expiry        ?? '',
+      passport_country:       student.passport_country       ?? '',
+      // Financial
+      annual_income:          student.annual_income          ?? '',
+      income_currency:        student.income_currency        ?? '',
+      income_source:          student.income_source          ?? '',
+      // Supporter / sponsor
+      supporter_name:         student.supporter_name         ?? '',
+      supporter_relation:     student.supporter_relation     ?? '',
+      supporter_occupation:   student.supporter_occupation   ?? '',
+      supporter_income:       student.supporter_income       ?? '',
+      supporter_currency:     student.supporter_currency     ?? '',
+      // Academic & career
+      highest_qualification:  student.highest_qualification  ?? '',
+      academic_summary:       student.academic_summary       ?? '',
+      career_summary:         student.career_summary         ?? '',
+      // target destination
+      target_country_id:      student.target_country_id      ?? null,
+      target_institute_id:    student.target_institute_id    ?? null,
+      target_program_id:      student.target_program_id      ?? null,
+      target_session_id:      student.target_session_id      ?? null,
+      _level_category:        null, // EducationSelector will report this after loading
     });
     setFormError(null);
     setSelected(student);
@@ -464,6 +522,208 @@ export default function Students() {
                     placeholder="e.g. Master's in Japan to advance engineering career…"
                   />
                 </Field>
+
+                {/* ── Passport ────────────────────────────────────────────── */}
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Passport
+                  </p>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Passport Number">
+                        <input
+                          className={INPUT}
+                          name="passport_number"
+                          value={form.passport_number}
+                          onChange={handleChange}
+                          disabled={saving}
+                          placeholder="A1234567"
+                        />
+                      </Field>
+                      <Field label="Issuing Country">
+                        <input
+                          className={INPUT}
+                          name="passport_country"
+                          value={form.passport_country}
+                          onChange={handleChange}
+                          disabled={saving}
+                          placeholder="e.g. Bangladesh"
+                        />
+                      </Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Issue Date">
+                        <input
+                          className={INPUT}
+                          type="date"
+                          name="passport_issue_date"
+                          value={form.passport_issue_date}
+                          onChange={handleChange}
+                          disabled={saving}
+                        />
+                      </Field>
+                      <Field label="Expiry Date">
+                        <input
+                          className={INPUT}
+                          type="date"
+                          name="passport_expiry"
+                          value={form.passport_expiry}
+                          onChange={handleChange}
+                          disabled={saving}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Financial ───────────────────────────────────────────── */}
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Financial
+                  </p>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Annual Income">
+                        <input
+                          className={INPUT}
+                          type="number"
+                          name="annual_income"
+                          value={form.annual_income}
+                          onChange={handleChange}
+                          disabled={saving}
+                          placeholder="0"
+                          min="0"
+                        />
+                      </Field>
+                      <Field label="Currency">
+                        <input
+                          className={INPUT}
+                          name="income_currency"
+                          value={form.income_currency}
+                          onChange={handleChange}
+                          disabled={saving}
+                          placeholder="BDT"
+                        />
+                      </Field>
+                    </div>
+                    <Field label="Income Source">
+                      <input
+                        className={INPUT}
+                        name="income_source"
+                        value={form.income_source}
+                        onChange={handleChange}
+                        disabled={saving}
+                        placeholder="e.g. Business, Salary, Family"
+                      />
+                    </Field>
+                  </div>
+                </div>
+
+                {/* ── Supporter / Sponsor ─────────────────────────────────── */}
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Supporter / Sponsor
+                  </p>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Supporter Name">
+                        <input
+                          className={INPUT}
+                          name="supporter_name"
+                          value={form.supporter_name}
+                          onChange={handleChange}
+                          disabled={saving}
+                          placeholder="Full name"
+                        />
+                      </Field>
+                      <Field label="Relation">
+                        <input
+                          className={INPUT}
+                          name="supporter_relation"
+                          value={form.supporter_relation}
+                          onChange={handleChange}
+                          disabled={saving}
+                          placeholder="e.g. Father"
+                        />
+                      </Field>
+                    </div>
+                    <Field label="Occupation">
+                      <input
+                        className={INPUT}
+                        name="supporter_occupation"
+                        value={form.supporter_occupation}
+                        onChange={handleChange}
+                        disabled={saving}
+                        placeholder="e.g. Business owner"
+                      />
+                    </Field>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Annual Income">
+                        <input
+                          className={INPUT}
+                          type="number"
+                          name="supporter_income"
+                          value={form.supporter_income}
+                          onChange={handleChange}
+                          disabled={saving}
+                          placeholder="0"
+                          min="0"
+                        />
+                      </Field>
+                      <Field label="Currency">
+                        <input
+                          className={INPUT}
+                          name="supporter_currency"
+                          value={form.supporter_currency}
+                          onChange={handleChange}
+                          disabled={saving}
+                          placeholder="BDT"
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Academic & Career ───────────────────────────────────── */}
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Academic & Career
+                  </p>
+                  <div className="space-y-4">
+                    <Field label="Highest Qualification">
+                      <input
+                        className={INPUT}
+                        name="highest_qualification"
+                        value={form.highest_qualification}
+                        onChange={handleChange}
+                        disabled={saving}
+                        placeholder="e.g. Bachelor's in Engineering"
+                      />
+                    </Field>
+                    <Field label="Academic Summary">
+                      <textarea
+                        className={INPUT}
+                        name="academic_summary"
+                        value={form.academic_summary}
+                        onChange={handleChange}
+                        disabled={saving}
+                        rows={3}
+                        placeholder="Academic background, GPA, institutions attended…"
+                      />
+                    </Field>
+                    <Field label="Career Summary">
+                      <textarea
+                        className={INPUT}
+                        name="career_summary"
+                        value={form.career_summary}
+                        onChange={handleChange}
+                        disabled={saving}
+                        rows={3}
+                        placeholder="Work experience, skills, achievements…"
+                      />
+                    </Field>
+                  </div>
+                </div>
 
                 {/* ── Target Destination ──────────────────────────────────── */}
                 <div className="border-t border-gray-100 pt-4">

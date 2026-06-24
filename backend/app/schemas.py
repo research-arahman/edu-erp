@@ -259,6 +259,25 @@ class StudentCreate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     purpose: Optional[str] = None
+    # Passport
+    passport_number: Optional[str] = None
+    passport_issue_date: Optional[str] = None
+    passport_expiry: Optional[str] = None
+    passport_country: Optional[str] = None
+    # Financial / income
+    annual_income: Optional[float] = None
+    income_currency: Optional[str] = None
+    income_source: Optional[str] = None
+    # Supporter / sponsor
+    supporter_name: Optional[str] = None
+    supporter_relation: Optional[str] = None
+    supporter_occupation: Optional[str] = None
+    supporter_income: Optional[float] = None
+    supporter_currency: Optional[str] = None
+    # Academic / career
+    highest_qualification: Optional[str] = None
+    academic_summary: Optional[str] = None
+    career_summary: Optional[str] = None
     target_country_id: Optional[int] = None
     target_institute_id: Optional[str] = None
     target_program_id: Optional[str] = None
@@ -275,6 +294,25 @@ class StudentUpdate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     purpose: Optional[str] = None
+    # Passport
+    passport_number: Optional[str] = None
+    passport_issue_date: Optional[str] = None
+    passport_expiry: Optional[str] = None
+    passport_country: Optional[str] = None
+    # Financial / income
+    annual_income: Optional[float] = None
+    income_currency: Optional[str] = None
+    income_source: Optional[str] = None
+    # Supporter / sponsor
+    supporter_name: Optional[str] = None
+    supporter_relation: Optional[str] = None
+    supporter_occupation: Optional[str] = None
+    supporter_income: Optional[float] = None
+    supporter_currency: Optional[str] = None
+    # Academic / career
+    highest_qualification: Optional[str] = None
+    academic_summary: Optional[str] = None
+    career_summary: Optional[str] = None
     target_country_id: Optional[int] = None
     target_institute_id: Optional[str] = None
     target_program_id: Optional[str] = None
