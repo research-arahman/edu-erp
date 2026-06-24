@@ -5,24 +5,25 @@
 **Owner:** Mohd Abdur Rahman
 **GitHub:** `research-arahman/edu-erp` (branch `main`)
 **Local path:** `~/Library/Mobile Documents/com~apple~CloudDocs/vs_code_project/Virtual_Business/edu-erp`
+**Last updated:** End of session, June 24, 2026
 **Working style:** One small task at a time. Wait for "done" before moving on. SQL goes in the editor, never pasted into the terminal. Commit after each working chunk.
 
 ---
 
 ## 1. Project Overview & Goal
 
-A centralized **Education ERP that works primarily as a CRM**, for an education + job-placement consultancy ("Advance EduERP") serving **Bangladeshi students and job-seekers** applying to **30–40 global destinations** (UK, Japan, US, Canada, Australia, Germany, Ireland, Turkey, Malaysia, and more).
+A centralized **Education ERP that works primarily as a CRM**, for an education + job-placement consultancy ("Advance Educonsultancy Pvt. Ltd.") serving **Bangladeshi students and job-seekers** applying to **30–40 global destinations** (UK, Japan, US, Canada, Australia, Germany, Ireland, Turkey, Malaysia, and more).
 
 The system runs **two parallel service tracks** that share infrastructure (staff profiles, documents, tasks, accounting, audit log):
 
 1. **Education track** — students applying for Bachelor's, Master's, PhD, Diploma, and language programs (JLPT, English, TOPIK).
 2. **Employment track** — job-seekers ("candidates"), especially **Japan SSW** (Specified Skilled Worker), expanding later to Europe and beyond.
 
-**Signature feature:** a data-driven **cascading selector** (Country → type → level → institute/employer → program/job → session), showing only data that actually exists — never generic options.
+**Signature feature:** a data-driven **cascading selector** (Country → type → level → institute/employer → program/job → session), showing only data that actually exists — never generic options. **This is fully built and working** (C4 complete).
 
 **Other core modules:** inquiry tracker, application pipelines, document storage (Google Drive API, planned), role-based access control, a visual roadmap of each applicant's journey, an institute/employer database with fees, an accounting module (full chart of accounts), task management, and a student/candidate portal (planned).
 
-**Key architectural insight reached during the build:** the *admission process itself* (steps + timeframes) varies by **country × study level** — e.g. Japan Master's requires finding a professor first; Western Master's applies to a central committee. This is modeled as **reusable templates**, not per-program data.
+**Key architectural insight:** the *admission process itself* (steps + timeframes) varies by **country × study level** — e.g. Japan Master's requires finding a professor first; Western Master's applies to a central committee. Modeled as **reusable templates**, not per-program data.
 
 ---
 
@@ -30,12 +31,12 @@ The system runs **two parallel service tracks** that share infrastructure (staff
 
 | Layer | Technology | Version / notes |
 |---|---|---|
-| Database + Auth | **Supabase** (Postgres + Row-Level Security + Storage) | CLI v2.106.0 (v2.107 available); project ref `fhzjizgsxlowjxzocasj`, region Oceania (Sydney) |
+| Database + Auth | **Supabase** (Postgres + Row-Level Security + Storage) | CLI v2.106.0; project ref `fhzjizgsxlowjxzocasj`, region Oceania (Sydney) |
 | Backend | **FastAPI** (Python) | fastapi 0.137.1, uvicorn 0.49.0, supabase-py 2.31.0, pydantic 2.13.4, python-dotenv 1.2.2, google-api-python-client 2.197.0 |
 | Python | CPython | 3.11 (venv at `backend/venv`) |
 | Frontend | **React + Vite + Tailwind** | Vite 8.0.16, react-router-dom 7.18.0 |
 | Source control | **Git / GitHub** | repo `research-arahman/edu-erp` |
-| Agentic coding | **Claude Code (CLI)** | v2.1.18x, used inside the repo for bulk code |
+| Agentic coding | **Claude Code (CLI)** | Sonnet model, used inside the repo for bulk code |
 | Hosting (planned) | **Render** | not yet deployed |
 | Documents (planned) | **Google Drive API** | service-account approach, not yet wired |
 | Dev OS | macOS (zsh, conda `base` active, Homebrew) | — |
@@ -54,7 +55,8 @@ Note: the new Supabase key format is **publishable = anon**, **secret = service_
 
 ```
 edu-erp/
-├── CLAUDE.md                      # context file Claude CLI reads every session (schema, roles, rules)
+├── CLAUDE.md                      # context file Claude CLI reads every session (KEEP UPDATED)
+├── HANDOFF.md                     # this document — keep in sync with CLAUDE.md
 ├── README.md
 ├── .gitignore                     # ignores .env, venv/, node_modules/, service-account.json
 ├── backend/
@@ -65,19 +67,23 @@ edu-erp/
 │   │   └── seed_countries.py      # idempotent country seeder (already run → 39 countries)
 │   └── app/
 │       ├── __init__.py
-│       ├── config.py              # loads SUPABASE_* env vars via python-dotenv + os.environ
+│       ├── config.py              # loads SUPABASE_* env vars
 │       ├── database.py            # supabase client (service-role key)
-│       ├── main.py                # FastAPI app; CORS; routers mounted under /api prefix
-│       ├── schemas.py             # Pydantic models (Country, Institute, Program, ProgramSession,
-│       │                          #   AdmissionTemplate, AdmissionStep, ...) — money fields = float, never Decimal
+│       ├── main.py                # FastAPI app; CORS; all routers mounted under /api prefix
+│       ├── schemas.py             # Pydantic models — money fields = float, never Decimal
 │       └── routers/
 │           ├── __init__.py
 │           ├── countries.py       # CRUD
 │           ├── institutes.py      # CRUD + ?country_id=&type= filter
-│           ├── programs.py        # CRUD + sessions sub-resource (program_sessions)
-│           ├── admission_templates.py  # CRUD + steps sub-resource (admission_steps)
-│           ├── selector_education.py   # read-only cascading selector endpoints
-│           └── selector_employment.py  # read-only cascading selector endpoints
+│           ├── programs.py        # CRUD + sessions sub-resource
+│           ├── admission_templates.py  # CRUD + steps sub-resource
+│           ├── industries.py      # CRUD over industry_fields + ?country_id= filter
+│           ├── employers.py       # CRUD + ?country_id=&industry_field_id= filter
+│           ├── jobs.py            # CRUD + ?employer_id=; GET /qualification-types read-only
+│           ├── students.py        # CRUD — core profile; auth fields (assigned_counselor, created_by) omitted
+│           ├── candidates.py      # CRUD — core profile; auth fields omitted
+│           ├── selector_education.py   # read-only cascading selector endpoints (education chain)
+│           └── selector_employment.py  # read-only cascading selector endpoints (employment chain)
 ├── frontend/
 │   ├── vite.config.js             # proxy: '/api' → http://127.0.0.1:8000 (single clean rule)
 │   ├── package.json
@@ -88,20 +94,30 @@ edu-erp/
 │       ├── lib/
 │       │   └── api.js             # fetch wrapper; BASE_URL = (VITE_API_URL ?? '') + '/api'
 │       ├── components/
-│       │   └── Layout.jsx         # sidebar (Education/Employment/Data/Operations groups) + header + <Outlet/>
+│       │   ├── Layout.jsx               # sidebar nav (Education/Employment/Data/Operations + Destination Explorer) + header
+│       │   ├── EducationSelector.jsx    # reusable cascading education selector; saves target_* on student
+│       │   ├── EmploymentSelector.jsx   # reusable cascading employment selector; saves target_* on candidate
+│       │   └── AdmissionRoadmap.jsx     # read-only display of admission template steps for a student
 │       └── pages/
-│           ├── Dashboard.jsx      # placeholder
-│           ├── Countries.jsx      # WORKING (list, from /api/countries)
-│           ├── Institutes.jsx     # WORKING (full CRUD + drawer)
-│           ├── Programs.jsx       # WORKING (full CRUD + sessions sub-panel)
-│           ├── AdmissionTemplates.jsx  # WORKING (full CRUD + steps sub-panel)
-│           ├── Students.jsx, Applications.jsx, Candidates.jsx, Employers.jsx,
-│           ├── Jobs.jsx, JobApplications.jsx, Industries.jsx, Inquiries.jsx,
-│           ├── Tasks.jsx, Accounting.jsx   # all PLACEHOLDERS ("coming soon")
-│           └── Placeholder.jsx     # shared stub component
+│           ├── Dashboard.jsx            # placeholder
+│           ├── Countries.jsx            # WORKING (list)
+│           ├── Institutes.jsx           # WORKING (full CRUD)
+│           ├── Programs.jsx             # WORKING (full CRUD + requirement dropdowns + sessions)
+│           ├── AdmissionTemplates.jsx   # WORKING (full CRUD + ordered steps)
+│           ├── Industries.jsx           # WORKING (full CRUD over industry_fields)
+│           ├── Employers.jsx            # WORKING (full CRUD, country + industry dropdowns)
+│           ├── Jobs.jsx                 # WORKING (full CRUD, qual-type requirement dropdowns)
+│           ├── DestinationExplorer.jsx  # WORKING (standalone read-only cascading selector, both tracks)
+│           ├── Students.jsx             # WORKING (core profile + EducationSelector saving target_* + AdmissionRoadmap)
+│           ├── Candidates.jsx           # WORKING (core profile + EmploymentSelector saving target_* + Placement Roadmap placeholder)
+│           ├── Applications.jsx         # placeholder
+│           ├── JobApplications.jsx      # placeholder
+│           ├── Inquiries.jsx            # placeholder
+│           ├── Tasks.jsx                # placeholder
+│           └── Accounting.jsx           # placeholder
 └── supabase/
     ├── config.toml
-    └── migrations/                # ~16 timestamped .sql migrations (all pushed to cloud)
+    └── migrations/                # ~20 timestamped .sql migrations (all pushed to cloud)
 ```
 
 ---
@@ -110,25 +126,34 @@ edu-erp/
 
 **Database (Supabase cloud):** complete — all tables created, all RLS policies applied, all migrations pushed. (Full list in §5.)
 
-**Backend (FastAPI):** running locally, talks to Supabase. Working endpoints, all under `/api`:
-- `GET /` and `GET /health` (health check returns country count)
-- Countries CRUD
-- Institutes CRUD (+ filters)
-- Programs CRUD + program sessions sub-resource
-- Admission Templates CRUD + admission steps sub-resource
-- Cascading selector endpoints (education + employment) — built, return `[]` until data exists
+**Backend (FastAPI):** running locally, talks to Supabase. All endpoints under `/api`:
+- `GET /` and `GET /health`
+- **Countries** CRUD
+- **Institutes** CRUD (+ filters)
+- **Programs** CRUD + program sessions sub-resource
+- **Admission Templates** CRUD + admission steps sub-resource
+- **Industries** CRUD over `industry_fields` (+ `?country_id=` filter)
+- **Employers** CRUD (+ `?country_id=&industry_field_id=` filters)
+- **Jobs** CRUD (+ `?employer_id=` filter); `GET /qualification-types` (read-only list)
+- **Students** CRUD — core profile fields only (`assigned_counselor`/`created_by` deliberately omitted)
+- **Candidates** CRUD — core profile fields only (same omission)
+- **Cascading selector endpoints** — education + employment chains (read-only, return [] until data exists)
 
-**Frontend (React):** running locally at `localhost:5173`, app shell with grouped sidebar nav and routing. Fully working pages:
+**Frontend (React):** running locally at `localhost:5173`. Fully working pages:
 - **Countries** — lists all 39
-- **Institutes** — full add/edit/delete via slide-in drawer; one real record entered: **Yamaguchi University** (Japan, university, Yamaguchi, has dormitory)
-- **Programs** — full CRUD + inline sessions; one real record: **MOT** (Master's, Faculty of Engineering, under Yamaguchi University)
-- **Admission Templates** — full CRUD + ordered steps with free-text timeframes; one real template started: **Japan Masters** (Master's, with the "Find a Professor (Lab)" step and more being added)
+- **Institutes** — full CRUD
+- **Programs** — full CRUD + requirement dropdowns + sessions
+- **Admission Templates** — full CRUD + ordered steps with free-text timeframes
+- **Industries** — full CRUD over `industry_fields`
+- **Employers** — full CRUD; country + industry field dropdowns
+- **Jobs** — full CRUD; employer dropdown + structured SSW language/skills requirement dropdowns from `qualification_types`
+- **Destination Explorer** — standalone read-only cascading selector for both tracks; Education/Employment toggle; wired to `/selector/education/*` and `/selector/employment/*`
+- **Students** — core profile + embedded `EducationSelector` saving `target_*` + `AdmissionRoadmap` (read-only template steps)
+- **Candidates** — core profile + embedded `EmploymentSelector` saving `target_*` + Placement Roadmap placeholder
 
-All other sidebar pages are styled placeholders.
+**Reusable components:** `EducationSelector.jsx`, `EmploymentSelector.jsx`, `AdmissionRoadmap.jsx`
 
-**Data entered so far (real):** 39 countries, 1 institute, 1 program, 1 admission template (+ steps).
-
-**Source control:** everything committed and pushed to GitHub. Latest commits cover the `/api` prefix refactor and UUID fixes.
+**Source control:** everything committed and pushed to GitHub.
 
 ---
 
@@ -137,7 +162,7 @@ All other sidebar pages are styled placeholders.
 **Supabase project:** `edu-erp`, ref `fhzjizgsxlowjxzocasj`, region Oceania (Sydney). CLI linked locally.
 
 **Enums:**
-- `user_role`: owner, manager, counselor, student, team_leader, staff, accountant (legacy `instructor/hr/administrator` NOT used — job titles live in `profiles.position` instead)
+- `user_role`: owner, manager, counselor, student, team_leader, staff, accountant
 - `prog_level`: bachelors, masters, phd, language
 - `app_stage`: inquiry → profile_assessment → shortlisting → document_collection → application_submitted → offer_received → visa_processing → enrolled
 - `job_stage`: applied → screening → interview → offer → coe_processing → visa_processing → placed
@@ -145,40 +170,39 @@ All other sidebar pages are styled placeholders.
 **Tables (all have RLS):**
 
 *Education / core CRM:*
-- `countries` (int PK) — **39 rows seeded** (stable data only: name, iso_code, region, currency). Japan = id 1.
+- `countries` (int PK) — **39 rows seeded** (name, iso_code, region, currency). Japan = id 1.
 - `institutes` (uuid PK) — type: university/language_school/diploma; ownership; living expense; dormitory; services
-- `programs` (uuid PK) — `institute_id` (uuid FK), level_category, level_label, department, course_name, fees, currency, duration_months
+- `programs` (uuid PK) — `institute_id` (uuid FK), level_category, level_label, department, course_name, fees, currency, duration_months; + requirement fields: `language_test_accepted` (text), `min_language_level` (text), `moi_accepted` (bool)
 - `program_sessions` (uuid PK) — intakes per program
-- `admission_requirements` (uuid PK) — requirement checklist template per program
-- `students` (uuid PK) — rich profile: passport, income, supporter/sponsor, academic/career, purpose, target_country/institute/program/session
+- `admission_requirements` (uuid PK) — requirement checklist per program
+- `students` (uuid PK) — full profile: passport, income, supporter/sponsor, academic/career, purpose, target_country/institute/program/session (see target types in §8), status. Status values: **active / archived / enrolled / dropped**. `assigned_counselor` + `created_by` FK to `auth.users` — **deliberately omitted from API** until auth is wired.
 - `inquiries` (uuid PK) — lead tracker: new → contacted → qualified → converted/lost
 - `applications` + `application_checklist` (uuid PK) — 8-stage pipeline via `app_stage`
-- `journey_stages` + `student_journey` (visual roadmap; 8 seeded stages)
-- `admission_templates` (uuid PK) — **reusable per (country_id + level_category), UNIQUE on that pair**; name, description
-- `admission_steps` (uuid PK) — ordered steps for a template: step_order, title, description, **timeframe (FREE TEXT)**
+- `journey_stages` (8 seeded rows) + `student_journey` — visual roadmap; per-student progress tracking NOT yet wired in UI
+- `admission_templates` (uuid PK) — **reusable per (country_id INT + level_category text), UNIQUE on pair**; name, description
+- `admission_steps` (uuid PK) — ordered steps: step_order, title, description, **timeframe (FREE TEXT)**
 
 *Staff & access:*
-- `profiles` (uuid PK, references `auth.users`) — role, **position** (job title), **team**, **team_leader_id** (self-ref). Trigger auto-creates a profile row on signup (default role `staff`).
-- `activity_log` (immutable audit trail — insert+select only, NO update/delete policies)
+- `profiles` (uuid PK, references `auth.users`) — role, **position** (job title), **team**, **team_leader_id** (self-ref)
+- `activity_log` — immutable audit trail (insert+select only, NO update/delete)
 
 *Employment / SSW track:*
-- `industry_fields` — **Japan's 16 SSW fields seeded** (country-scoped, is_ssw flag)
-- `qualification_types` — language & skills tests; **JLPT, JFT-Basic, SSW Skills Test seeded**; has `levels[]` array
-- `employers` (uuid PK) — company DB; industry_field_id, is_ssw_registered, housing_support, contact person
-- `jobs` (uuid PK) — openings; structured requirements (req_language_qual_id + req_language_level, req_skills_qual_id), salary, start_period
-- `candidates` (uuid PK) — job-seeker profile (parallel to students) with structured language/skills proficiency + target chain
+- `industry_fields` (int PK) — **Japan's 16 SSW fields seeded** (country-scoped, is_ssw flag)
+- `qualification_types` (int PK) — **JLPT, JFT-Basic, SSW Skills Test seeded**; has `levels[]` array
+- `employers` (uuid PK) — company DB; country_id (int), industry_field_id (int), is_ssw_registered, housing_support, contact person
+- `jobs` (uuid PK) — openings; structured requirements (req_language_qual_id + req_language_level, req_skills_qual_id), salary, start_period, positions_available
+- `candidates` (uuid PK) — job-seeker profile (parallel to students). Status values: **active / archived / placed / dropped** (note: "placed" not "enrolled"). `assigned_counselor` + `created_by` FK to `auth.users` — **deliberately omitted from API** until auth is wired.
 - `job_applications` + `job_application_checklist` — employment pipeline via `job_stage`
 
 *Accounting (sensitive — owner/manager/accountant only via `can_view_accounting()`):*
-- `accounts` (int code PK) — **full chart of accounts seeded, codes 1000–6400** (Assets/Liabilities/Equity/Revenue/COGS/OPEX)
-- `transactions` — gateway-ready (Stripe/PayPal fields nullable until registered); debit/credit; links to student
-- `investments` — capital tracking
-- `commissions` — consultant commission foundation
+- `accounts` (int code PK) — **full chart of accounts seeded, codes 1000–6400**
+- `transactions` — gateway-ready (Stripe/PayPal fields nullable); debit/credit
+- `investments`, `commissions` — capital + consultant commission tracking
 
 *Task management:*
-- `daily_task_templates`, `tasks` (daily + assigned; todo/in_progress/done; role labels), `notifications`
+- `daily_task_templates`, `tasks`, `notifications`
 
-**RLS pattern (applies to almost every table):** authenticated users can SELECT/INSERT/UPDATE; DELETE only via `can_delete()` (owner or manager). Helper functions in DB: `current_user_role()`, `can_delete()`, `can_view_accounting()`, `can_manage_tasks()`.
+**RLS pattern:** authenticated users can SELECT/INSERT/UPDATE; DELETE only via `can_delete()` (owner or manager). Helper functions: `current_user_role()`, `can_delete()`, `can_view_accounting()`, `can_manage_tasks()`.
 
 ---
 
@@ -199,85 +223,83 @@ Wait for "Application startup complete." Leave running. (`--reload-dir app` prev
 cd ~/Library/Mobile\ Documents/com~apple~CloudDocs/vs_code_project/Virtual_Business/edu-erp/frontend
 npm run dev
 ```
-Wait for the `localhost:5173` line. Leave running. **Restart this whenever `vite.config.js` changes** (proxy config is read only at startup).
+Wait for the `localhost:5173` line. Leave running. **Restart this whenever `vite.config.js` changes.**
 
 **Terminal 3 — Working terminal** (git, supabase, Claude CLI):
 ```bash
 cd ~/Library/Mobile\ Documents/com~apple~CloudDocs/vs_code_project/Virtual_Business/edu-erp
 ```
-Use for `git`, `supabase`, and launching `claude`.
 
-**Health check that everything is up:**
-```bash
-curl http://127.0.0.1:8000/api/countries     # should return 39 countries
-```
-Then open `http://localhost:5173` — the app should load.
+**Health check:** `curl http://127.0.0.1:8000/api/countries` → 39 countries; `http://localhost:5173` → app loads.
 
-**Database migration workflow (when schema changes are needed):**
+**Database migration workflow:**
 ```bash
 supabase migration new <name>
-code supabase/migrations/*_<name>.sql    # paste SQL in EDITOR, save (never paste SQL in terminal)
+code supabase/migrations/*_<name>.sql    # edit in VS Code, never paste SQL in terminal
 supabase db push                          # confirm with Y
 git add . && git commit -m "..." && git push
 ```
 
-**macOS gotchas seen:** the keychain prompt during `supabase db push` wants the **Mac login password**, not Supabase. PostHog telemetry TLS warnings on the university network are harmless. If a paste turns the prompt into `quote>`, press Ctrl+C and run lines one at a time.
-
 ---
 
-## 7. Remaining C3 Chunks (Data-Entry Frontend)
+## 7. Remaining Work (in order)
 
-We are mid **Phase C (frontend)**, sub-phase **C3 (data-entry forms)**. Done so far in C3: Institutes, Programs, Admission Templates. Remaining:
+1. **Per-student roadmap progress tracking** — wire `student_journey` table so each student can tick off steps in `AdmissionRoadmap.jsx`. Currently the roadmap only shows the template read-only. **User specifically wants this next.**
 
-1. **C3 — Program requirement dropdowns** (small, do first):
-   Add requirement fields to the Programs form/table: `language_test_accepted` (dropdown: TOEFL / IELTS / JLPT / Duolingo / etc.), `min_language_level` (text), `moi_accepted` (yes/no — Medium of Instruction letter accepted in lieu of a test). *Note: the `programs` table may need these columns added via a migration first — verify against the current schema before building the UI.*
+2. **Profile enrichment pass** — add the full profile fields to the forms:
+   - Students: passport, income/funding, supporter/sponsor, academic history, career goals, purpose statement
+   - Candidates: passport, income, work history, language proficiency (structured), skills proficiency (structured)
 
-2. **C3 — Employers management page** (employment track):
-   Full CRUD page like Institutes, for the `employers` table. Country dropdown + industry_field dropdown (from `industry_fields`), SSW-registered, housing support, contact person.
+3. **Employment process templates + Candidate Placement Roadmap** — build the country + industry keyed process-template concept (parallel to `admission_templates`) and wire it into the Candidates page.
 
-3. **C3 — Jobs management page** (employment track):
-   Full CRUD like Programs, for the `jobs` table. Employer dropdown, industry/SSW field, structured language requirement (qualification_type dropdown + level), structured skills requirement, salary range, start_period.
+4. **Inquiries UI** — lead tracker (new → contacted → qualified → converted/lost).
 
-4. **C3 — Employment admission/process templates (parallel concept):**
-   The employment track needs its **own** process-template concept, keyed by **country + industry/SSW field** (NOT study level), mirroring `admission_templates`. Build when doing the employment frontend so the two tracks stay clean and don't tangle.
+5. **Applications + Job Applications pipeline UI** — Kanban-style stage boards using `app_stage` / `job_stage` enums.
 
-Then beyond C3:
+6. **Tasks UI, Accounting UI, Dashboards.**
 
-5. **C4 — Cascading selector UI:** wire the dependent dropdowns to the existing `selector_education` / `selector_employment` endpoints. These light up once C3 data exists.
+7. **Authentication + RBAC enforcement** — currently backend uses service key and bypasses RLS entirely. Wire Supabase Auth + JWT so RLS actually enforces per-user access. **Critical before any real staff log in.**
 
-6. **C5 — Students & Candidates pages + the visual roadmap:** the rich profile forms, and where each admission/employment template **surfaces as the applicant's live roadmap** (look up template by the applicant's country + level/industry, render its ordered steps + timeframes).
-
-7. **Later phases:** inquiries UI, application pipelines (Kanban), dashboards, **authentication/login** (critical — see §8), Google Drive document integration, accounting module UI, task management UI, then **Render deployment**.
+8. **Google Drive document integration** (service-account), then **Render deployment**.
 
 ---
 
 ## 8. Key Decisions & Conventions
 
-- **Roles vs job titles:** `user_role` enum = *permission tiers* only (owner, manager, team_leader, staff, accountant, student). Job titles (Business Developer, Marketing Officer, Admission Officer, Application Officer, Counselor, Language Instructor) live in `profiles.position`. Teams in `profiles.team`, reporting line in `profiles.team_leader_id`.
-- **Delete rule:** only **owner** and **manager** can delete (enforced in DB via `can_delete()` in every table's DELETE policy). team_leader and staff cannot delete.
-- **Accounting is sensitive:** visible only to owner/manager/accountant (`can_view_accounting()`).
-- **Audit log is immutable:** insert + select only; no update/delete, not even for managers.
-- **Two tracks, shared infrastructure:** students (education) and candidates (employment) are parallel. Keep their code parallel and consistent (routers, schemas, pages) so neither creates a mess for the other.
-- **Admission process = reusable templates** keyed by (country + study level), not per-program. Steps have **free-text timeframes** (handles 40-country variation; structured dates can be added later if ever needed).
-- **Authentic data only:** never auto-seed volatile data (tuition, rankings, intake dates, employer names, live jobs). Only stable reference data is seeded (countries by ISO code/currency; Japan's official 16 SSW fields; standard test types; chart-of-accounts codes). Everything advisable to a real student is entered by hand from real sources.
-- **Money fields:** Pydantic schemas use `float`, **never `Decimal`** (Decimal broke JSON serialization to Supabase — a recurring early bug).
-- **IDs:** `countries` and `accounts` use **integer** PKs; **all other tables use UUID** PKs. Foreign keys referencing them must match type. *This caused two bugs: `institute_id` and `template_id` were wrongly typed `int` in schemas/routers — both fixed to `str`. Watch for this pattern on every new UUID foreign key.*
-- **API routing:** all backend routes are mounted under **`/api`** so they never collide with React Router page paths. Frontend `api.js` prepends `/api`; Vite proxy forwards only `/api` to the backend. (Before this fix, typing a page URL like `/admission-templates` returned raw JSON.)
-- **CORS:** dev uses the Vite proxy (same-origin), so no CORS issues. `allow_credentials=True` was removed (it conflicted with `allow_origins=["*"]`). For production, set `VITE_API_URL` to the deployed backend origin.
-- **Claude CLI usage:** used for bulk code generation inside the repo; it reads `CLAUDE.md` each session. **Update `CLAUDE.md` whenever a new concept/table is added** so it stays consistent. Exit sessions with `/exit`. Don't let multiple stale Claude CLI sessions run server commands (causes port conflicts).
-- **Build rhythm:** one small task at a time; commit after each working chunk; SQL in the editor, not the terminal.
+- **One step at a time.** Finish, confirm "done", then next.
+- **Terminal vs editor:** SQL and code go in the VS Code editor, never pasted into the terminal.
+- **UUID vs INT — the recurring trap.** UUID PKs: institutes, programs, employers, candidates, students, jobs, admission_templates, admission_steps. INT PKs: countries, industry_fields, qualification_types, accounts. FK types in routers/schemas must match. This bug bit `institute_id`, `template_id`, `program_id` — always check before writing a new router.
+- **Money fields: `float`, NEVER `Decimal`.** Decimal is not JSON-serializable (caused an early crash).
+- **API under `/api` prefix.** All backend routes mounted under `/api`; Vite proxy has a single `/api` rule. React Router owns everything else.
+- **RLS pattern:** select/insert/update for `authenticated`; delete via `can_delete()` only (owner + manager). Accounting restricted via `can_view_accounting()`. Activity log immutable.
+- **Write significant actions to `activity_log`** (create/update/delete/stage_change/assign).
+- **Roles vs job titles:** `user_role` enum = permission tiers (owner > manager > team_leader > staff/accountant). Job titles live in `profiles.position`. `team_leader` CANNOT delete.
+- **Reusable admission templates**, not per-program — keyed by (country + study level), free-text timeframes.
+- **Authentic data only.** Never auto-seed volatile data (tuition, employer names, live jobs). Only stable reference data is seeded.
+- **Keep two tracks parallel** (routers, schemas, pages) so education and employment don't tangle.
+- **Update `CLAUDE.md` and this file** whenever a new concept/table/component is added.
+- **Commit after each working milestone.** Secrets stay out of Git.
+- **`assigned_counselor` and `created_by` on students/candidates** FK to `auth.users` (which is empty — we run solo via service key). These are **deliberately omitted** from create/update schemas and forms. Do NOT send them. Wire when auth is added.
+- **Status values differ by track.** Students: `active / archived / enrolled / dropped`. Candidates: `active / archived / placed / dropped` (note: "placed" not "enrolled").
+- **Target chain field types.** Students: `target_country_id` INT, `target_institute_id` / `target_program_id` / `target_session_id` UUID. Candidates: `target_country_id` INT, `target_industry_id` INT, `target_employer_id` / `target_job_id` UUID, `target_start_period` text. Mixing types silently fails.
+- **Selector re-fetch on edit.** On opening a student/candidate for edit, the selector must re-fetch and pre-select the deepest saved level. A session-restore bug was found and fixed in `EducationSelector.jsx`; `EmploymentSelector.jsx` was built correctly from the start.
+- **Student/Candidate profiles are CORE ONLY so far.** Passport, income, academic, supporter (students) and passport, income, work history, language/skills (candidates) exist in the DB but are NOT yet in the forms. The profile enrichment pass (remaining chunk #2) adds them.
 
 ---
 
 ## 9. Immediate Next Step
 
-**Finish entering the Japan Master's admission template steps** (orders 2–7), then **commit** the current working state:
+**Remaining chunk #1 — Per-student progress tracking on the Admission Roadmap.**
 
-```bash
-cd ~/Library/Mobile\ Documents/com~apple~CloudDocs/vs_code_project/Virtual_Business/edu-erp
-git add . && git commit -m "Add admission templates frontend + /api prefix + UUID fixes" && git push
-```
+The `student_journey` table and `journey_stages` (8 seeded rows) already exist. The `AdmissionRoadmap.jsx` component displays template steps read-only. Make each step checkable per student:
 
-**Then begin C3 step 1: Program requirement dropdowns.** First verify whether the `programs` table already has `language_test_accepted`, `min_language_level`, `moi_accepted` columns; if not, create a migration to add them, then build the dropdowns into `Programs.jsx`. Keep cost/number fields as typed inputs.
+1. Backend: `GET /students/{id}/journey` and `POST /students/{id}/journey/{stage_id}` (or equivalent) reading/writing `student_journey`.
+2. Frontend: update `AdmissionRoadmap.jsx` to fetch and render the student's journey state with checkboxes, persisting progress to the API.
+3. Test: open a student, advance a step, confirm it saves and reloads.
+4. Commit: `"Add per-student roadmap progress tracking (student_journey)"`
 
-> Reminder for the new session: ensure all three terminals are running (§6) and confirm `curl http://127.0.0.1:8000/api/countries` returns 39 rows before building anything.
+> **Before starting:** ensure all three terminals are running and `curl http://127.0.0.1:8000/api/countries` returns 39 rows.
+
+---
+
+*Snapshot as of June 24, 2026. As building continues this will drift — regenerate at the next milestone. Keep `CLAUDE.md` in sync.*
