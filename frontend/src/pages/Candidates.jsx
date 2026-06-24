@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import EmploymentSelector from '../components/EmploymentSelector';
+import PlacementRoadmap from '../components/PlacementRoadmap';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -764,10 +765,10 @@ export default function Candidates() {
                   <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
                     Placement Roadmap
                   </p>
-                  <div className="rounded-md border border-dashed border-gray-200 px-4 py-3 text-center text-sm text-gray-400">
-                    Employment roadmap templates are not set up yet. This will show the
-                    step-by-step placement process once country + industry templates are added.
-                  </div>
+                  <PlacementRoadmap
+                    country_id={form.target_country_id != null ? Number(form.target_country_id) : null}
+                    industry_field_id={form.target_industry_id != null ? Number(form.target_industry_id) : null}
+                  />
                 </div>
 
               </div>

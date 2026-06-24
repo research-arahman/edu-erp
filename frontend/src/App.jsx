@@ -16,6 +16,7 @@ import Inquiries from './pages/Inquiries';
 import Tasks from './pages/Tasks';
 import Accounting from './pages/Accounting';
 import AdmissionTemplates from './pages/AdmissionTemplates';
+import PlacementTemplates from './pages/PlacementTemplates';
 import DestinationExplorer from './pages/DestinationExplorer';
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="employers" element={<Employers />} />
           <Route path="jobs" element={<Jobs />} />
           <Route path="job-applications" element={<JobApplications />} />
+          <Route path="placement-templates" element={<PlacementTemplates />} />
           <Route path="countries" element={<Countries />} />
           <Route path="industries" element={<Industries />} />
           <Route path="inquiries" element={<Inquiries />} />

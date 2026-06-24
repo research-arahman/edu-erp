@@ -25,6 +25,7 @@ const NAV = [
       { to: '/employers', label: 'Employers' },
       { to: '/jobs', label: 'Jobs' },
       { to: '/job-applications', label: 'Job Applications' },
+      { to: '/placement-templates', label: 'Placement Templates' },
     ],
   },
   {

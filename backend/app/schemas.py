@@ -401,3 +401,37 @@ class CandidateUpdate(BaseModel):
     target_job_id: Optional[str] = None
     target_start_period: Optional[str] = None
     status: Optional[str] = None
+
+
+# ── Placement Templates ───────────────────────────────────────────────────────
+
+class PlacementTemplateCreate(BaseModel):
+    country_id: int
+    industry_field_id: int
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PlacementTemplateUpdate(BaseModel):
+    country_id: Optional[int] = None
+    industry_field_id: Optional[int] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ── Placement Steps ───────────────────────────────────────────────────────────
+
+class PlacementStepCreate(BaseModel):
+    step_order: int
+    title: str
+    description: Optional[str] = None
+    timeframe: Optional[str] = None
+
+
+class PlacementStepUpdate(BaseModel):
+    step_order: Optional[int] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    timeframe: Optional[str] = None
