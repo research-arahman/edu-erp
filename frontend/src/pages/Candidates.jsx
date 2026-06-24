@@ -768,6 +768,7 @@ export default function Candidates() {
                   <PlacementRoadmap
                     country_id={form.target_country_id != null ? Number(form.target_country_id) : null}
                     industry_field_id={form.target_industry_id != null ? Number(form.target_industry_id) : null}
+                    candidateId={panel === 'edit' ? selected?.id : null}
                   />
                 </div>
 
