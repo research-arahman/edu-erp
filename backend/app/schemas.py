@@ -246,3 +246,37 @@ class JobUpdate(BaseModel):
     start_period: Optional[str] = None
     positions_available: Optional[int] = None
     is_open: Optional[bool] = None
+
+
+# ── Students ──────────────────────────────────────────────────────────────────
+
+class StudentCreate(BaseModel):
+    full_name: str
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    nationality: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    purpose: Optional[str] = None
+    target_country_id: Optional[int] = None
+    target_institute_id: Optional[str] = None
+    target_program_id: Optional[str] = None
+    target_session_id: Optional[str] = None
+    status: Optional[str] = None
+
+
+class StudentUpdate(BaseModel):
+    full_name: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    nationality: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    purpose: Optional[str] = None
+    target_country_id: Optional[int] = None
+    target_institute_id: Optional[str] = None
+    target_program_id: Optional[str] = None
+    target_session_id: Optional[str] = None
+    status: Optional[str] = None

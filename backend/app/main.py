@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import supabase
-from app.routers import countries, institutes, programs, selector_education, selector_employment, admission_templates, employers, industries, qualification_types, jobs
+from app.routers import countries, institutes, programs, selector_education, selector_employment, admission_templates, employers, industries, qualification_types, jobs, students
 
 app = FastAPI(title="edu-erp-api")
 
@@ -23,6 +23,7 @@ app.include_router(employers.router, prefix="/api")
 app.include_router(industries.router, prefix="/api")
 app.include_router(qualification_types.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
+app.include_router(students.router, prefix="/api")
 
 
 @app.get("/")
