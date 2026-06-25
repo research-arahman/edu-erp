@@ -485,3 +485,29 @@ class ApplicationUpdate(BaseModel):
     submitted_at: Optional[str] = None
     offer_received_at: Optional[str] = None
     decision_notes: Optional[str] = None
+
+
+# ── Job Applications ───────────────────────────────────────────────────────────
+
+class JobApplicationCreate(BaseModel):
+    candidate_id: str
+    job_id: str
+    stage: Optional[str] = None
+    status: Optional[str] = None
+    applied_at: Optional[str] = None
+    interview_at: Optional[str] = None
+    offer_received_at: Optional[str] = None
+    placed_at: Optional[str] = None
+    decision_notes: Optional[str] = None
+
+
+class JobApplicationUpdate(BaseModel):
+    candidate_id: Optional[str] = None
+    job_id: Optional[str] = None
+    stage: Optional[str] = None
+    status: Optional[str] = None
+    applied_at: Optional[str] = None
+    interview_at: Optional[str] = None
+    offer_received_at: Optional[str] = None
+    placed_at: Optional[str] = None
+    decision_notes: Optional[str] = None
