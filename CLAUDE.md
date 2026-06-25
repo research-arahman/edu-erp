@@ -1,7 +1,7 @@
 # Education ERP / CRM — Project Handoff & Context
 
 **Company:** Advance Educonsultancy (Pvt) Ltd.
-**Last updated:** End of session, June 24, 2026
+**Last updated:** End of session, June 25, 2026
 **Repo:** `github.com/research-arahman/edu-erp` (branch `main`)
 **Owner:** Abdur Rahman
 
@@ -71,7 +71,8 @@ edu-erp/
 │       ├── *_create_admission_templates.sql
 │       ├── *_add_program_requirements.sql
 │       ├── *_create_student_step_progress.sql  # student_step_progress table (per-step tracking)
-│       └── *_create_placement_templates.sql    # placement_templates + placement_steps tables
+│       ├── *_create_placement_templates.sql    # placement_templates + placement_steps tables
+│       └── *_create_candidate_step_progress.sql # candidate_step_progress table (per-candidate tracking)
 ├── backend/
 │   ├── venv/                  # Python virtual environment (gitignored)
 │   ├── requirements.txt
@@ -98,7 +99,11 @@ edu-erp/
 │           ├── placement_templates.py # placement templates CRUD + steps sub-resource
 │           ├── selector_education.py  # cascading selector (education chain) — read-only
 │           ├── selector_employment.py # cascading selector (employment chain) — read-only
-│           └── admission_templates.py # templates + steps sub-resource
+│           ├── admission_templates.py # templates + steps sub-resource
+│           ├── candidate_progress.py  # GET/PUT/DELETE /candidates/{id}/steps/{step_id}/progress
+│           ├── inquiries.py           # inquiries CRUD + ?status= filter
+│           ├── applications.py        # applications CRUD + enriched list + PATCH for stage
+│           └── job_applications.py    # job_applications CRUD + enriched list + PATCH for stage
 └── frontend/
     ├── package.json
     ├── vite.config.js         # single /api proxy rule → http://127.0.0.1:8000
@@ -114,7 +119,7 @@ edu-erp/
         │   ├── EducationSelector.jsx  # reusable cascading education selector (saves target_*)
         │   ├── EmploymentSelector.jsx # reusable cascading employment selector (saves target_*)
         │   ├── AdmissionRoadmap.jsx   # INTERACTIVE when given studentId prop (Pending/Current/Done); read-only without studentId
-        │   └── PlacementRoadmap.jsx   # read-only placement roadmap from placement_templates steps (candidate Placement tab)
+        │   └── PlacementRoadmap.jsx   # INTERACTIVE when given candidateId prop (Pending/Current/Done); read-only without candidateId
         └── pages/
             ├── Dashboard.jsx          # placeholder
             ├── Countries.jsx          # working (lists 39 countries)
@@ -127,10 +132,10 @@ edu-erp/
             ├── Jobs.jsx               # working (full CRUD, qual-type requirement dropdowns)
             ├── DestinationExplorer.jsx # working (standalone read-only cascading selector, both tracks)
             ├── Students.jsx           # working (full enriched profile + EducationSelector + interactive AdmissionRoadmap)
-            ├── Candidates.jsx         # working (full enriched profile + EmploymentSelector + read-only PlacementRoadmap)
-            ├── Applications.jsx       # placeholder
-            ├── JobApplications.jsx    # placeholder
-            ├── Inquiries.jsx          # placeholder
+            ├── Candidates.jsx         # working (full enriched profile + EmploymentSelector + interactive PlacementRoadmap)
+            ├── Applications.jsx       # working (Kanban: 8 cols = app_stage; drag-to-stage; create/edit drawer; student + program pickers)
+            ├── JobApplications.jsx    # working (Kanban: 7 cols = job_stage; drag-to-stage; create/edit drawer; candidate + job pickers)
+            ├── Inquiries.jsx          # working (table + colored status badges; filter buttons; add/edit drawer with source + follow-up date)
             ├── Tasks.jsx              # placeholder
             └── Accounting.jsx         # placeholder
 ```
@@ -152,10 +157,14 @@ edu-erp/
   - **students** (CRUD — full enriched profile including passport, financial, supporter, academic sections; `assigned_counselor` / `created_by` deliberately omitted until auth is wired)
   - **candidates** (CRUD — full enriched profile including passport, financial, work background, structured language/skills; same auth-field omission)
   - **student_progress** (`GET /students/{id}/progress`; `PUT /students/{id}/steps/{step_id}/progress` upsert; `DELETE /students/{id}/steps/{step_id}/progress` reset to pending)
+  - **candidate_progress** (`GET /candidates/{id}/progress`; `PUT /candidates/{id}/steps/{step_id}/progress` upsert; `DELETE` reset to pending)
   - **placement_templates** (CRUD + `/{id}/steps` sub-resource + `DELETE /placement-steps/{id}`)
   - **selector_education** (read-only cascading chain)
   - **selector_employment** (read-only cascading chain)
   - **admission_templates** (CRUD + steps sub-resource)
+  - **inquiries** (CRUD; `GET` supports `?status=` filter; `assigned_to`/`created_by`/`converted_student_id` omitted until auth)
+  - **applications** (CRUD; `GET` list enriches each row with `student_name`, `program_name`, `program_level` via bulk lookups; `PATCH` for stage change on drag)
+  - **job_applications** (CRUD; `GET` list enriches each row with `candidate_name`, `job_title`, `employer_name`; `PATCH` for stage change on drag)
 
 ### Frontend (React + Vite + Tailwind)
 - App shell: sidebar with grouped nav (Dashboard, Education, Employment, Data, Operations), header, routed content area.
@@ -170,7 +179,10 @@ edu-erp/
   - **Jobs** — full CRUD with employer dropdown + structured SSW language/skills requirement dropdowns from `qualification_types`
   - **Destination Explorer** — standalone read-only cascading selector for both tracks, toggled via Education/Employment switch
   - **Students** — full enriched profile form (passport, financial, supporter, academic sections) + embedded `EducationSelector` saving `target_*` fields + **interactive** `AdmissionRoadmap` (Pending/Current/Done per step, persisted to `student_step_progress`)
-  - **Candidates** — full enriched profile form (passport, financial, work background, structured language/skills dropdowns from `qualification_types`) + embedded `EmploymentSelector` saving `target_*` fields + **read-only** `PlacementRoadmap` (looks up template by `target_country_id` + `target_industry_id`)
+  - **Candidates** — full enriched profile form (passport, financial, work background, structured language/skills dropdowns from `qualification_types`) + embedded `EmploymentSelector` saving `target_*` fields + **interactive** `PlacementRoadmap` (Pending/Current/Done per step, persisted to `candidate_step_progress`; read-only in ADD mode)
+  - **Inquiries** — lead tracker table with colored status badges (new/contacted/qualified/converted/lost), status filter buttons, add/edit drawer (name, phone, email, source dropdown, interest_country_id, interest_level, status, follow_up_date, notes); `assigned_to`/`created_by`/`converted_student_id` omitted until auth
+  - **Applications** — Kanban board with 8 columns = `app_stage` values (inquiry → profile_assessment → shortlisting → document_collection → application_submitted → offer_received → visa_processing → enrolled); native HTML5 drag-and-drop (no new npm dep); drag-to-change-stage persists via `PATCH`; create/edit drawer with student + program pickers, stage, status, decision_notes; `application_checklist` deferred
+  - **Job Applications** — Kanban board with 7 columns = `job_stage` values (applied → screening → interview → offer → coe_processing → visa_processing → placed); same drag-and-drop pattern; create/edit drawer with candidate + job pickers; `job_application_checklist` deferred
 - **Reusable components:** `EducationSelector.jsx`, `EmploymentSelector.jsx`, `AdmissionRoadmap.jsx`, `PlacementRoadmap.jsx`
 - API client (`api.js`) talks to `/api`; Vite proxy forwards `/api` → backend. **Now has `get`, `post`, `patch`, `put`, and `delete` methods** (`put` was added this session — it was missing and caused PUT calls to fail).
 - Verified end-to-end: browser → API → Supabase → browser.
@@ -186,6 +198,10 @@ edu-erp/
 - Students: full enriched profiles saving; interactive roadmap progress (Pending → Current → Done) persisted per step per student.
 - Candidates: full enriched profiles saving including structured language/skills dropdowns; read-only Placement Roadmap showing template steps from `placement_templates`.
 - Placement Templates page fully working (CRUD + ordered steps), in parity with Admission Templates.
+- Candidates: interactive Placement Roadmap progress (Pending → Current → Done) persisted per step per candidate via `candidate_step_progress` — employment track now at full parity with education.
+- Inquiries: lead pipeline table with status workflow and filtering, fully working.
+- Applications: Kanban board (8 stages, native drag-and-drop) for the education pipeline, fully working.
+- Job Applications: Kanban board (7 stages, native drag-and-drop) for the employment pipeline, fully working.
 
 ---
 
@@ -214,6 +230,7 @@ edu-erp/
 - `admission_templates` — **one row per (country_id INT + level_category text), UNIQUE on the pair**; reusable admission process
 - `admission_steps` — ordered steps per template (step_order, title, description, **free-text** timeframe). **id and template_id are UUIDs.**
 - `student_step_progress` — per-student progress on each admission step. Columns: `id` (uuid PK), `student_id` (uuid FK → students), `step_id` (uuid FK → admission_steps), `status` ('pending' | 'current' | 'done', default 'pending'), `note` (text), `updated_at`, `created_at`. **UNIQUE(student_id, step_id).** Upserted on each update; deleted (reset) on demand.
+- `candidate_step_progress` — per-candidate progress on each placement step. Mirrors `student_step_progress`: `id` (uuid PK), `candidate_id` (uuid FK → candidates ON DELETE CASCADE), `step_id` (uuid FK → placement_steps ON DELETE CASCADE), `status` ('pending'|'current'|'done', default 'pending'), `note` (text), `updated_at`, `created_at`. **UNIQUE(candidate_id, step_id).**
 
 **Employment / SSW**
 - `industry_fields` — Japan's 16 SSW fields seeded (country-scoped, is_ssw flag); INT id
@@ -296,7 +313,7 @@ Each completed selection feeds the student's `target_*` fields and the interacti
 ```
 Country → Industry/SSW field → Employer → Job position → start period
 ```
-Feeds `candidate.target_*` fields and the read-only `PlacementRoadmap.jsx` (interactive progress tracking is the next step).
+Feeds `candidate.target_*` fields and the **interactive** `PlacementRoadmap.jsx` (Pending/Current/Done per step, persisted to `candidate_step_progress`).
 
 **Selector re-fetch behavior (important):** On edit, the selectors must re-fetch and pre-select the deepest saved level. A session-restore bug was found and fixed in `EducationSelector.jsx`; `EmploymentSelector.jsx` was built correctly from the start.
 
@@ -315,7 +332,8 @@ Keyed by **(country_id + level_category)**, UNIQUE on the pair. `level_category`
 ### Placement Templates (Employment track)
 Keyed by **(country_id + industry_field_id)**, UNIQUE on the pair. Parallel to admission templates but for employment.
 - `placement_templates` / `placement_steps` — same structure as admission side.
-- `PlacementRoadmap.jsx` — **currently read-only**. Looks up the template matching the candidate's `target_country_id` + `target_industry_id` and displays the steps. Per-candidate interactive progress is the next build chunk.
+- `PlacementRoadmap.jsx` — **interactive** when given a `candidateId` prop: renders each step with Pending/Current/Done controls that upsert to `candidate_step_progress`. **Read-only** when no `candidateId` (Destination Explorer, Candidates ADD mode). Mirrors `AdmissionRoadmap.jsx` exactly.
+- `candidate_step_progress` — the per-candidate state store for placement step progress.
 - One template seeded: **Japan Nursing Care (SSW)** (country 1, industry 1).
 
 **Level dropdown (admission templates & programs):** Bachelor's, Master's, PhD, Diploma, Foundation/Pathway, JLPT (Japanese), English, TOPIK (Korean), Other.
@@ -332,18 +350,22 @@ Keyed by **(country_id + industry_field_id)**, UNIQUE on the pair. Parallel to a
 - ✅ **C5b — Student profile enrichment:** passport, financial, supporter/sponsor, academic/career sections added to `StudentCreate`/`StudentUpdate` schemas and the Students form.
 - ✅ **C5c — Candidate profile enrichment:** passport, financial, work background, structured language/skills (dropdowns from `qualification_types`) added to `CandidateCreate`/`CandidateUpdate` schemas and the Candidates form.
 - ✅ **C5d — Employment placement templates:** `placement_templates` + `placement_steps` tables, `placement_templates.py` router, `PlacementTemplates.jsx` page, `PlacementRoadmap.jsx` component (read-only).
+- ✅ **C5e — Per-candidate placement progress tracking:** `candidate_step_progress` table + `candidate_progress.py` router + interactive `PlacementRoadmap.jsx` with Pending/Current/Done controls persisted per step per candidate. Employment track now at full parity with education.
+- ✅ **C6 — Inquiries tracker:** `inquiries.py` router (CRUD + `?status=` filter) + `Inquiries.jsx` page (table, colored status badges, filter buttons, add/edit drawer). `assigned_to`/`created_by`/`converted_student_id` deferred until auth.
+- ✅ **C7 — Applications Kanban (education pipeline):** `applications.py` router (CRUD + enriched list with student_name/program_name/program_level + PATCH for stage) + `Applications.jsx` page (8-column Kanban = `app_stage`, native HTML5 drag-and-drop, create/edit drawer). `application_checklist` deferred.
+- ✅ **C8 — Job Applications Kanban (employment pipeline):** `job_applications.py` router (CRUD + enriched list with candidate_name/job_title/employer_name + PATCH for stage) + `JobApplications.jsx` page (7-column Kanban = `job_stage`, same drag-and-drop pattern, create/edit drawer). `job_application_checklist` deferred.
 
 ### Remaining (in order)
 
-1. **Per-candidate placement progress tracking** — mirror `student_step_progress` for placement steps. Create `candidate_step_progress` table (same structure: candidate_id FK → candidates, step_id FK → placement_steps, status pending/current/done, note). Add `candidate_progress.py` router. Make `PlacementRoadmap.jsx` interactive when given a `candidateId` prop, matching the pattern of `AdmissionRoadmap.jsx`.
+1. **Referral Partners + commissions** (NEXT) — referral partners are ongoing business relationships (other firms, Japanese language centers in Bangladesh, individual agents) who send students/candidates. Needs: a `referral_partners` entity (name, type firm/language_center/individual, contact, default commission basis percentage/fixed + rate, notes, is_active), FK columns on inquiries/students/candidates, and commission/service-fee tracking wired into the existing `commissions` + `transactions` tables. Two fee directions: (a) service fee collected FROM a referral partner for students they send; (b) direct service fee FROM students for the Japan university application service (find supervisor, apply on behalf, interview prep). Status flow: pending → approved → paid, triggered at milestones (COE received / visa granted).
 
-2. **Inquiries UI** — lead tracking page (new → contacted → qualified → converted/lost).
+2. **Deferred checklists** — `application_checklist` (seed from program `admission_requirements`, tick off per application) and `job_application_checklist`. Tables and DB structure already exist; no UI or endpoints yet.
 
-3. **Applications + Job Applications pipeline UI** — Kanban-style stage boards using `app_stage` / `job_stage` enums.
+3. **Inquiry → Student/Candidate one-click conversion** — set inquiry `status='converted'`, create the student/candidate record, store `converted_student_id` on the inquiry. (Field exists on `inquiries` table; deferred until auth is wired for `created_by`.)
 
 4. **Tasks UI, Accounting UI, Dashboards.**
 
-5. **Authentication + RBAC enforcement** — currently backend uses the service key and bypasses RLS entirely; deletes are not role-gated at the API layer. Wire Supabase Auth, issue JWTs, and route the backend through authenticated sessions so RLS actually enforces per-user access. **Critical before any real staff log in.**
+5. **Authentication + RBAC enforcement** — backend still uses the service key and bypasses RLS entirely; deletes not yet role-gated at the API layer; `profiles` table is empty (that's why `assigned_to`/`created_by`/`assigned_counselor` are omitted everywhere). Wire Supabase Auth, issue JWTs, route the backend through authenticated sessions so RLS actually enforces per-user access. **Critical before any real staff log in.**
 
 6. **Google Drive document integration** (service-account approach), then **Render deployment**.
 
@@ -367,25 +389,27 @@ Keyed by **(country_id + industry_field_id)**, UNIQUE on the pair. Parallel to a
 14. **`assigned_counselor` and `created_by` on students/candidates FK to `auth.users`, which is EMPTY** (we run solo via service key). These fields are deliberately **omitted** from student and candidate create/update schemas and forms. Do not send them. They will be wired when authentication is added.
 15. **Status values differ between tracks.** Students: `active / archived / enrolled / dropped`. Candidates: `active / archived / placed / dropped` (note: "placed", not "enrolled").
 16. **Target chain field types must be respected.** Students: `target_country_id` INT, `target_institute_id` / `target_program_id` / `target_session_id` UUID. Candidates: `target_country_id` INT, `target_industry_id` INT, `target_employer_id` / `target_job_id` UUID, `target_start_period` text. Mixing UUID and INT on these will silently fail.
-17. **`AdmissionRoadmap.jsx` is conditionally interactive.** It renders Pending/Current/Done controls (hitting `student_progress.py`) when a `studentId` prop is passed. Without `studentId` it stays read-only — this is intentional for the Destination Explorer and Students ADD mode (no id yet).
+17. **Both roadmap components are conditionally interactive.** `AdmissionRoadmap.jsx` renders Pending/Current/Done controls (hitting `student_progress.py`) when a `studentId` prop is passed; stays read-only without it (Destination Explorer, Students ADD mode). `PlacementRoadmap.jsx` renders the same interactive controls (hitting `candidate_progress.py`) when a `candidateId` prop is passed; stays read-only without it (Candidates ADD mode). This pattern is intentional — no ID exists in ADD mode.
 18. **`api.js` now has all five HTTP methods:** `get`, `post`, `patch`, `put`, `delete`. The `put` method was missing until this session and caused silent failures on PUT calls — always use `api.put(...)` for upserts, never fall back to `api.post(...)`.
 
 ---
 
 ## 11. Immediate Next Step
 
-**Remaining chunk #1 — Per-candidate placement progress tracking.**
+**Remaining chunk #1 — Referral Partners + commissions.**
 
-`PlacementRoadmap.jsx` is currently read-only. The pattern to follow is exactly what was just built for students (`student_step_progress` table + `student_progress.py` router + interactive `AdmissionRoadmap.jsx`):
+Referral partners are firms, Japanese language centers in Bangladesh, and individual agents who send students/candidates to Advance Educonsultancy. Two fee directions exist: (a) service fee collected FROM a referral partner for each student they send, and (b) direct service fee FROM a student for the Japan university application service (finding a supervisor, applying on behalf, interview prep). Commission status flow: pending → approved → paid, triggered at milestones (COE received / visa granted).
 
-1. Create migration: `candidate_step_progress` table (id uuid PK, candidate_id uuid FK → candidates ON DELETE CASCADE, step_id uuid FK → placement_steps ON DELETE CASCADE, status text default 'pending' CHECK IN ('pending','current','done'), note text, updated_at timestamptz, created_at timestamptz; UNIQUE(candidate_id, step_id)).
-2. Add `candidate_progress.py` router: `GET /candidates/{id}/progress`, `PUT /candidates/{id}/steps/{step_id}/progress` (upsert), `DELETE /candidates/{id}/steps/{step_id}/progress` (reset). Mount in `main.py`.
-3. Add `CandidateStepProgressUpdate` schema to `schemas.py`.
-4. Make `PlacementRoadmap.jsx` interactive when given a `candidateId` prop (mirror `AdmissionRoadmap.jsx` exactly).
-5. Pass `candidateId` from `Candidates.jsx` to `PlacementRoadmap` when editing an existing candidate (not on ADD).
-6. Test: open a candidate with a matched template, advance a step, confirm it saves and reloads.
-7. Commit: `"Add per-candidate placement progress tracking (candidate_step_progress)"`
+Build order:
+1. Migration: `referral_partners` table (id uuid PK, name text NOT NULL, type text CHECK IN ('firm','language_center','individual'), contact_name text, contact_phone text, contact_email text, default_commission_basis text CHECK IN ('percentage','fixed'), default_commission_rate float, notes text, is_active bool default true, created_at timestamptz, updated_at timestamptz).
+2. Migration: add nullable `referral_partner_id uuid FK → referral_partners` to `inquiries`, `students`, `candidates`.
+3. `referral_partners.py` router: full CRUD. Mount in `main.py`.
+4. `ReferralPartnerCreate`/`ReferralPartnerUpdate` schemas in `schemas.py`.
+5. `ReferralPartners.jsx` page: table + add/edit drawer. Nav link under Operations group.
+6. Add partner picker dropdown to the Inquiries form and the Students/Candidates forms.
+7. Commission tracking: wire service fees into the existing `commissions` + `transactions` tables; respect the pending → approved → paid flow.
+8. Test end-to-end. Commit: `"Add referral partners entity and commission tracking"`
 
 ---
 
-*Snapshot as of June 24, 2026. As building continues this will drift — regenerate it at the next milestone rather than relying on it weeks later. Remember to also keep `HANDOFF.md` in sync.*
+*Snapshot as of June 25, 2026. As building continues this will drift — regenerate it at the next milestone rather than relying on it weeks later. Remember to also keep `HANDOFF.md` in sync.*
