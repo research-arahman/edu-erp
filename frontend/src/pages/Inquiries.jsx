@@ -8,6 +8,7 @@ const EMPTY_FORM = {
   phone:                   '',
   email:                   '',
   source:                  '',
+  interest_track:          '',
   interest_country_id:     '',
   interest_level:          '',
   status:                  'new',
@@ -46,6 +47,7 @@ function buildPayload(form) {
   if (form.phone.trim())             p.phone                  = form.phone.trim();
   if (form.email.trim())             p.email                  = form.email.trim();
   if (form.source)                   p.source                 = form.source;
+  if (form.interest_track)           p.interest_track         = form.interest_track;
   if (form.interest_country_id)      p.interest_country_id    = Number(form.interest_country_id);
   if (form.interest_level)           p.interest_level         = form.interest_level;
   if (form.follow_up_date)           p.follow_up_date         = form.follow_up_date;
@@ -167,6 +169,7 @@ export default function Inquiries() {
       phone:                   inquiry.phone                   ?? '',
       email:                   inquiry.email                   ?? '',
       source:                  inquiry.source                  ?? '',
+      interest_track:          inquiry.interest_track          ?? '',
       interest_country_id:     inquiry.interest_country_id     ?? '',
       interest_level:          inquiry.interest_level          ?? '',
       status:                  inquiry.status                  ?? 'new',
@@ -189,7 +192,11 @@ export default function Inquiries() {
 
   function handleChange(e) {
     const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === 'interest_track' && value !== 'education') next.interest_level = '';
+      return next;
+    });
   }
 
   async function handleSubmit(e) {
@@ -363,7 +370,7 @@ export default function Inquiries() {
             <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Name', 'Phone', 'Source', 'Interest Country', 'Status', 'Follow-up Date', ''].map((col) => (
+                  {['Name', 'Phone', 'Source', 'Interest Country', 'Status', 'Track', 'Follow-up Date', ''].map((col) => (
                     <th
                       key={col}
                       className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
@@ -376,7 +383,7 @@ export default function Inquiries() {
               <tbody className="divide-y divide-gray-100">
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-16 text-center text-sm text-gray-400">
+                    <td colSpan={8} className="px-5 py-16 text-center text-sm text-gray-400">
                       {filter === 'all'
                         ? 'No inquiries yet — add one above.'
                         : `No ${STATUS_LABELS[filter].toLowerCase()} inquiries.`}
@@ -403,6 +410,14 @@ export default function Inquiries() {
                       </td>
                       <td className="px-5 py-3">
                         <StatusBadge status={inq.status} />
+                      </td>
+                      <td className="px-5 py-3">
+                        {inq.interest_track === 'education' && (
+                          <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700">Education</span>
+                        )}
+                        {inq.interest_track === 'employment' && (
+                          <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700">Employment</span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-gray-600">
                         {inq.follow_up_date ?? '—'}
@@ -472,9 +487,12 @@ export default function Inquiries() {
                       type="button"
                       onClick={handleConvert}
                       disabled={converting || convertingCandidate || saving}
-                      className="rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-medium
-                                 text-white hover:bg-emerald-700 disabled:opacity-50
-                                 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
+                      className={`rounded-md px-4 py-2.5 text-sm font-medium disabled:opacity-50
+                                 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 ${
+                        form.interest_track === 'employment'
+                          ? 'border border-emerald-600 text-emerald-700 hover:bg-emerald-50'
+                          : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      }`}
                     >
                       {converting ? 'Converting…' : 'Convert to Student'}
                     </button>
@@ -482,9 +500,12 @@ export default function Inquiries() {
                       type="button"
                       onClick={handleConvertCandidate}
                       disabled={converting || convertingCandidate || saving}
-                      className="rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium
-                                 text-white hover:bg-blue-700 disabled:opacity-50
-                                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                      className={`rounded-md px-4 py-2.5 text-sm font-medium disabled:opacity-50
+                                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+                        form.interest_track === 'education'
+                          ? 'border border-blue-600 text-blue-700 hover:bg-blue-50'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
                     >
                       {convertingCandidate ? 'Converting…' : 'Convert to Candidate'}
                     </button>
@@ -576,8 +597,23 @@ export default function Inquiries() {
                   </Field>
                 </div>
 
-                {/* Interest Country + Level */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Interest Track */}
+                <Field label="Interest Track">
+                  <select
+                    className={INPUT}
+                    name="interest_track"
+                    value={form.interest_track}
+                    onChange={handleChange}
+                    disabled={saving}
+                  >
+                    <option value="">— select —</option>
+                    <option value="education">Education</option>
+                    <option value="employment">Employment</option>
+                  </select>
+                </Field>
+
+                {/* Interest Country + Level (level only when track is education) */}
+                <div className={`grid gap-4 ${form.interest_track === 'education' ? 'grid-cols-2' : 'grid-cols-1'}`}>
                   <Field label="Interest Country">
                     <select
                       className={INPUT}
@@ -592,20 +628,22 @@ export default function Inquiries() {
                       ))}
                     </select>
                   </Field>
-                  <Field label="Interest Level">
-                    <select
-                      className={INPUT}
-                      name="interest_level"
-                      value={form.interest_level}
-                      onChange={handleChange}
-                      disabled={saving}
-                    >
-                      <option value="">— none —</option>
-                      {LEVEL_OPTIONS.map((l) => (
-                        <option key={l.value} value={l.value}>{l.label}</option>
-                      ))}
-                    </select>
-                  </Field>
+                  {form.interest_track === 'education' && (
+                    <Field label="Interest Level">
+                      <select
+                        className={INPUT}
+                        name="interest_level"
+                        value={form.interest_level}
+                        onChange={handleChange}
+                        disabled={saving}
+                      >
+                        <option value="">— none —</option>
+                        {LEVEL_OPTIONS.map((l) => (
+                          <option key={l.value} value={l.value}>{l.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
                 </div>
 
                 {/* Status + Follow-up Date */}
