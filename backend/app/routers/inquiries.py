@@ -60,8 +60,12 @@ def convert_inquiry(inquiry_id: str):
         raise HTTPException(status_code=404, detail="Inquiry not found")
     inquiry = inq_result.data[0]
 
-    # 2. Guard: already converted
-    if inquiry.get("status") == "converted" or inquiry.get("converted_student_id"):
+    # 2. Guard: already converted (to student OR candidate)
+    if (
+        inquiry.get("status") == "converted"
+        or inquiry.get("converted_student_id")
+        or inquiry.get("converted_candidate_id")
+    ):
         raise HTTPException(status_code=400, detail="Inquiry already converted.")
 
     # 3. Build student payload from inquiry fields
@@ -99,3 +103,56 @@ def convert_inquiry(inquiry_id: str):
         )
 
     return {"student": new_student, "inquiry": upd_result.data[0]}
+
+
+@router.post("/{inquiry_id}/convert-candidate", status_code=201)
+def convert_inquiry_to_candidate(inquiry_id: str):
+    # 1. Fetch inquiry
+    inq_result = supabase.table("inquiries").select("*").eq("id", inquiry_id).execute()
+    if not inq_result.data:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    inquiry = inq_result.data[0]
+
+    # 2. Guard: already converted (to student OR candidate)
+    if (
+        inquiry.get("status") == "converted"
+        or inquiry.get("converted_student_id")
+        or inquiry.get("converted_candidate_id")
+    ):
+        raise HTTPException(status_code=400, detail="Inquiry already converted.")
+
+    # 3. Build candidate payload from inquiry fields
+    candidate_payload: dict = {
+        "full_name": inquiry["name"],
+        "status": "active",
+    }
+    if inquiry.get("phone"):
+        candidate_payload["phone"] = inquiry["phone"]
+    if inquiry.get("email"):
+        candidate_payload["email"] = inquiry["email"]
+    if inquiry.get("interest_country_id") is not None:
+        candidate_payload["target_country_id"] = inquiry["interest_country_id"]
+    if inquiry.get("referred_by_partner_id") is not None:
+        candidate_payload["referred_by_partner_id"] = inquiry["referred_by_partner_id"]
+
+    # 4. Create candidate
+    cand_result = supabase.table("candidates").insert(candidate_payload).execute()
+    if not cand_result.data:
+        raise HTTPException(status_code=500, detail="Failed to create candidate record.")
+    new_candidate = cand_result.data[0]
+    new_candidate_id = new_candidate["id"]
+
+    # 5. Update inquiry — if this fails, surface the created candidate_id so nothing is lost
+    inquiry_update = {
+        "status": "converted",
+        "converted_candidate_id": new_candidate_id,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    upd_result = supabase.table("inquiries").update(inquiry_update).eq("id", inquiry_id).execute()
+    if not upd_result.data:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Candidate created (id={new_candidate_id}) but inquiry update failed. Manually set converted_candidate_id on the inquiry.",
+        )
+
+    return {"candidate": new_candidate, "inquiry": upd_result.data[0]}

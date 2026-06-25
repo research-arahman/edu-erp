@@ -110,8 +110,9 @@ export default function Inquiries() {
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
   const [formError,  setFormError]  = useState(null);
-  const [converting, setConverting] = useState(false);
-  const [successMsg, setSuccessMsg] = useState(null);
+  const [converting,          setConverting]          = useState(false);
+  const [convertingCandidate, setConvertingCandidate] = useState(false);
+  const [successMsg,          setSuccessMsg]          = useState(null);
 
   // ── data loading ───────────────────────────────────────────────────────────
 
@@ -119,15 +120,30 @@ export default function Inquiries() {
     return api.get('/inquiries').then(setInquiries);
   }
 
+  function silentRefetch() {
+    api.get('/inquiries')
+      .then(setInquiries)
+      .catch(() => {
+        setTimeout(() => {
+          api.get('/inquiries').then(setInquiries).catch(console.error);
+        }, 400);
+      });
+  }
+
   useEffect(() => {
-    Promise.all([api.get('/inquiries'), api.get('/countries'), api.get('/referral-partners')])
-      .then(([inqs, cntrs, parts]) => {
-        setInquiries(inqs);
-        setCountries(cntrs);
-        setPartners(parts);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    Promise.allSettled([
+      api.get('/inquiries'),
+      api.get('/countries'),
+      api.get('/referral-partners'),
+    ]).then(([inqsResult, cntrsResult, partsResult]) => {
+      if (inqsResult.status === 'fulfilled') {
+        setInquiries(inqsResult.value);
+      } else {
+        setError(inqsResult.reason?.message ?? 'Failed to load inquiries.');
+      }
+      if (cntrsResult.status === 'fulfilled') setCountries(cntrsResult.value);
+      if (partsResult.status === 'fulfilled') setPartners(partsResult.value);
+    }).finally(() => setLoading(false));
   }, []);
 
   const countryMap = Object.fromEntries(countries.map((c) => [c.id, c.name]));
@@ -212,15 +228,49 @@ export default function Inquiries() {
     setFormError(null);
     try {
       const res = await api.post(`/inquiries/${selected.id}/convert`, {});
-      const { student, inquiry } = res;
-      await loadInquiries();
+      const { student, inquiry: updatedInquiry } = res;
+      // Optimistically update the row so the badge flips to 'converted' immediately
+      setInquiries((prev) =>
+        prev.map((i) => (i.id === selected.id ? updatedInquiry : i))
+      );
       setSuccessMsg(`Converted — new student created: ${student.full_name}.`);
       setTimeout(() => setSuccessMsg(null), 5000);
       closePanel();
+      // Background refetch to sync any server-side changes; errors never surface to UI
+      silentRefetch();
     } catch (err) {
       setFormError(err.message);
     } finally {
       setConverting(false);
+    }
+  }
+
+  async function handleConvertCandidate() {
+    if (
+      !window.confirm(
+        'Convert this inquiry into a candidate? This creates a new candidate record carrying over their name, contact, target country, and referral partner.'
+      )
+    )
+      return;
+
+    setConvertingCandidate(true);
+    setFormError(null);
+    try {
+      const res = await api.post(`/inquiries/${selected.id}/convert-candidate`, {});
+      const { candidate, inquiry: updatedInquiry } = res;
+      // Optimistically update the row so the badge flips to 'converted' immediately
+      setInquiries((prev) =>
+        prev.map((i) => (i.id === selected.id ? updatedInquiry : i))
+      );
+      setSuccessMsg(`Converted — new candidate created: ${candidate.full_name}.`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+      closePanel();
+      // Background refetch to sync any server-side changes; errors never surface to UI
+      silentRefetch();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setConvertingCandidate(false);
     }
   }
 
@@ -402,25 +452,43 @@ export default function Inquiries() {
               </button>
             </div>
 
-            {/* Convert to Student — edit mode only */}
+            {/* Convert — edit mode only */}
             {panel === 'edit' && (
               <div className="mx-6 mt-4">
-                {selected?.status === 'converted' || selected?.converted_student_id ? (
+                {selected?.status === 'converted' || selected?.converted_student_id || selected?.converted_candidate_id ? (
                   <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
                     <span className="text-base">✓</span>
-                    <span className="font-medium">Converted to student</span>
+                    <span className="font-medium">
+                      {selected?.converted_student_id
+                        ? 'Converted to student'
+                        : selected?.converted_candidate_id
+                        ? 'Converted to candidate'
+                        : 'Converted'}
+                    </span>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={handleConvert}
-                    disabled={converting || saving}
-                    className="w-full rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-medium
-                               text-white hover:bg-emerald-700 disabled:opacity-50
-                               focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
-                  >
-                    {converting ? 'Converting…' : 'Convert to Student'}
-                  </button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={handleConvert}
+                      disabled={converting || convertingCandidate || saving}
+                      className="rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-medium
+                                 text-white hover:bg-emerald-700 disabled:opacity-50
+                                 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
+                    >
+                      {converting ? 'Converting…' : 'Convert to Student'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConvertCandidate}
+                      disabled={converting || convertingCandidate || saving}
+                      className="rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium
+                                 text-white hover:bg-blue-700 disabled:opacity-50
+                                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                    >
+                      {convertingCandidate ? 'Converting…' : 'Convert to Candidate'}
+                    </button>
+                  </div>
                 )}
               </div>
             )}
