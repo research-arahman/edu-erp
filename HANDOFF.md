@@ -401,6 +401,160 @@ git add supabase/migrations/ && git commit -m "..." && git push
 
 ---
 
+## 10A. FUTURE FEATURE — Authentication + Role-Based Task Management
+*(Design requirements only — not yet built. Auth must come first.)*
+
+---
+
+### Prerequisites
+
+**Auth is a hard prerequisite for everything in this section.** The Task Management system, role-based visibility, and wiring back `assigned_to` / `assigned_by` / `assigned_counselor` / `created_by` across the app all depend on Authentication being built first. `profiles` and `auth.users` are currently empty; that is why those FK fields are omitted throughout the app today.
+
+---
+
+### Planned Auth Approach
+
+- **Provider:** Supabase Auth (populates `auth.users`, which existing tables already reference).
+- **Account creation:** Admin-created only — NOT self-signup. This is an internal tool; the owner creates staff logins and assigns department + tier.
+- **Login method:** Email + password to start; MFA / OAuth can be added later.
+- **Backend:** Replace the blanket service-role key (which bypasses RLS) with JWT verification for user-facing requests. The service-role key stays for trusted internal operations only.
+
+---
+
+### Organisation Structure
+
+**9 departments:**
+1. Marketing
+2. Application
+3. Admission
+4. Administration
+5. HR
+6. Accounting
+7. Job Placement
+8. Language Instruction
+9. Business Development
+
+**3 tiers (firm-wide — every department has all three):**
+- `manager` — high authority within the department
+- `team_leader` — mid authority; supervises team members
+- `team_member` — standard staff
+
+**New table needed:** `departments` (id, name) — the 9 above.
+
+**`profiles` extensions required:**
+- `department_id` INT FK → `departments`
+- `tier` text CHECK IN ('manager', 'team_leader', 'team_member') — replaces the current looser `team` text field for authority purposes
+- `reports_to` uuid nullable self-ref FK → `profiles` — the direct supervisor; drives the delegation + upward-visibility chain
+- `is_active` bool default true — for deactivating leavers without deleting their audit trail
+
+---
+
+### Task Types
+
+**1. Fixed Tasks (daily, role- and position-based)**
+
+Routine tasks auto-generated each working day based on the employee's `department_id` + `tier`. Admins have full CRUD over the templates (`daily_task_templates` table already exists; needs `department_id` added to it).
+
+Each fixed task has a **time window** (`start_time` / `end_time` already on `daily_task_templates`). Tasks are presented as an ordered daily schedule.
+
+**Generation approach (recommended):** lazy-on-login — when a staff member logs in, generate today's task instances from matching templates if not already present for that date. A cron/hybrid approach can be layered on later.
+
+**2. Assigned Tasks (dynamic, one-off)**
+
+Project or ad-hoc tasks assigned **downward** along the `reports_to` hierarchy:
+- Owner / Admin → Managers → Team Leaders → Team Members
+
+Staff can also create their own personal to-do items within this category — these count as self-assigned.
+
+The existing `tasks` table already supports `assigned_to`, `assigned_by`, `priority`, `due_date`, and `status` — this is the foundation.
+
+---
+
+### Verification + Upward Visibility + Flagging (detailed requirements)
+
+**Verification:**
+A task is not simply "done" when its time window passes or its status is set. The staff member must explicitly **verify / confirm** completion. An unverified task is treated as incomplete even if its window has elapsed. Implementation: add a `verified_at` timestamp (or a `is_verified` boolean) to the task instance — distinct from `status='done'`.
+
+**Upward visibility:**
+Completion AND non-completion roll up the `reports_to` chain. Each person sees their own tasks plus everyone who reports to them (directly or transitively):
+- Team Leader → sees their team members' tasks
+- Manager → sees their team leaders' and all underlying members' tasks
+- Owner → sees everyone's tasks across all departments
+
+Both done states and not-done states are visible upward. Managers especially need visibility into what did NOT happen.
+
+**Time/calendar-driven flagging:**
+Fixed tasks operate on a time + calendar system. When a task's `end_time` window passes and the task instance is still unverified / incomplete, the system **auto-flags** it as `missed` / `overdue`. This requires a scheduled check (Supabase Edge Function cron or equivalent) or lazy evaluation on next page load.
+
+**Escalation:**
+A flagged (missed / unverified) task triggers notifications escalating up the `reports_to` chain:
+1. The staff member themselves
+2. Their direct Team Leader
+3. Their Manager
+4. The Owner
+
+The existing `notifications` table already has `recipient_id`, `type`, `related_task_id`, `is_read` — this is the foundation. The escalation logic writes rows to this table.
+
+**Owner's authority:**
+The business owner has full, unfiltered visibility over all staff, all tasks, all flags, and all departments. No visibility restriction applies to the owner role.
+
+---
+
+### UI / UX (planned, not yet built)
+
+**Per-user dashboard on login:**
+- Greeting + date + department / tier badge
+- **"Today's Fixed Tasks"** — ordered by time window (like a daily schedule); each task shows start/end time, title, description, and a **Verify / Complete** control
+- **"Assigned Tasks"** — list with priority chips, due dates, who assigned; a **+ New Task** button creates a personal to-do (self-assigned)
+- **"Assign to…"** affordance — only enabled for users who have direct reports (i.e., `profiles` rows with `reports_to` pointing to this user)
+
+**Team view (for managers / team leaders):**
+A secondary tab or page showing completion status and flags across all reports (direct + transitive) — table or card layout; sortable by department, tier, flag status, date.
+
+**Notifications bell:**
+Header bell icon with unread count; dropdown list of recent notifications (missed task escalations, new assignments). Clicking marks as read (`is_read = true`).
+
+---
+
+### Supporting Artefact
+
+A spreadsheet template **`Fixed_Task_Definitions.xlsx`** was generated to capture each department × tier's daily fixed tasks. Columns map 1-to-1 into `daily_task_templates`:
+
+| Spreadsheet column | DB column |
+|---|---|
+| Task Title | `title` |
+| Description | `description` |
+| Department | `department_id` |
+| Tier | target tier (manager / team_leader / team_member) |
+| Start Time | `start_time` |
+| End Time | `end_time` |
+| Priority | priority on the generated task instance |
+| Active? | `is_active` |
+
+This template is to be filled in **with department leads when staff are onboarded**. Not urgent while the system is run solo; building it out first is unnecessary.
+
+---
+
+### Recommended Build Sequence (when resumed)
+
+1. **Supabase Auth + basic profiles row per user.** Login page in the frontend; backend verifies the JWT (instead of the service key) for user-facing requests. Owner creates accounts via the Supabase dashboard or a simple admin page.
+
+2. **`departments` table + `profiles` extensions** (`department_id`, `tier`, `reports_to`, `is_active`) + an admin **User Management page** (create staff, assign dept / tier / supervisor).
+
+3. **Enforce RLS properly** — stop using the service key for user requests; wire `assigned_to` / `assigned_counselor` / `created_by` back into Students, Candidates, Applications, Inquiries, and Activity Log everywhere they were deliberately omitted.
+
+4. **Task Management system** — in order:
+   a. `daily_task_templates` gets `department_id`; admin CRUD for templates
+   b. Lazy-on-login fixed-task generation (today's instances)
+   c. Assigned task delegation UI (downward assignment, personal to-dos)
+   d. Verification field + control per task instance
+   e. Upward visibility query (transitive `reports_to` chain)
+   f. Time/calendar flagging (auto-flag missed tasks after `end_time`)
+   g. Escalation notifications (write to `notifications` table, bell in header)
+   h. Per-user dashboard with both task sections
+
+---
+
 ## 11. Key Decisions & Conventions
 
 - **One step at a time.** Finish, confirm "done", then next.
