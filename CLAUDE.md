@@ -16,7 +16,7 @@ A centralized **CRM + ERP** for an education consultancy — **Advance Educonsul
 - **Education track** — students applying to 30–40 global destinations (UK, Japan, US, Canada, Australia, Germany, Ireland, Turkey, Malaysia, and more) for Bachelor's, Master's, PhD, diploma, and language programs.
 - **Employment track** — job-seekers (candidates) placed into work abroad, beginning with **Japan SSW (Specified Skilled Worker)** jobs, planned to expand to Europe and beyond.
 
-It functions primarily as a CRM (inquiry → pipeline → placement) and also as an ERP (accounting, tasks, roles, reporting). Core features: inquiry tracker, application pipelines, document storage (planned Google Drive API), role-based access control, a **cascading destination selector** (the signature feature), reusable **admission-process templates** and **placement-process templates**, interactive visual roadmaps with per-record progress tracking, accounting with a full chart of accounts, and task management.
+It functions primarily as a CRM (inquiry → pipeline → placement) and also as an ERP (accounting, tasks, roles, reporting). Core features: inquiry tracker, application pipelines, document storage (planned Google Drive API), role-based access control, a **cascading destination selector** (the signature feature), reusable **admission-process templates** and **placement-process templates**, interactive visual roadmaps with per-record progress tracking, accounting with a full chart of accounts, referral partner + service-fee tracking, and task management.
 
 ---
 
@@ -70,9 +70,12 @@ edu-erp/
 │       ├── *_create_job_applications.sql
 │       ├── *_create_admission_templates.sql
 │       ├── *_add_program_requirements.sql
-│       ├── *_create_student_step_progress.sql  # student_step_progress table (per-step tracking)
-│       ├── *_create_placement_templates.sql    # placement_templates + placement_steps tables
-│       └── *_create_candidate_step_progress.sql # candidate_step_progress table (per-candidate tracking)
+│       ├── *_create_student_step_progress.sql   # student_step_progress (per-step tracking)
+│       ├── *_create_placement_templates.sql     # placement_templates + placement_steps
+│       ├── *_create_candidate_step_progress.sql # candidate_step_progress (per-candidate tracking)
+│       ├── *_create_referral_partners.sql       # referral_partners table
+│       ├── *_add_referred_by_partner.sql        # referred_by_partner_id FK on inquiries/students/candidates
+│       └── *_create_service_fees.sql            # service_fees table (finance-RLS-gated)
 ├── backend/
 │   ├── venv/                  # Python virtual environment (gitignored)
 │   ├── requirements.txt
@@ -103,7 +106,9 @@ edu-erp/
 │           ├── candidate_progress.py  # GET/PUT/DELETE /candidates/{id}/steps/{step_id}/progress
 │           ├── inquiries.py           # inquiries CRUD + ?status= filter
 │           ├── applications.py        # applications CRUD + enriched list + PATCH for stage
-│           └── job_applications.py    # job_applications CRUD + enriched list + PATCH for stage
+│           ├── job_applications.py    # job_applications CRUD + enriched list + PATCH for stage
+│           ├── referral_partners.py   # referral_partners CRUD + ?type= & ?is_active= filters
+│           └── service_fees.py        # service_fees CRUD + filters + enriched list (partner/student/candidate names)
 └── frontend/
     ├── package.json
     ├── vite.config.js         # single /api proxy rule → http://127.0.0.1:8000
@@ -115,7 +120,7 @@ edu-erp/
         ├── lib/
         │   └── api.js         # fetch wrapper, base path '/api'; methods: get/post/patch/put/delete
         ├── components/
-        │   ├── Layout.jsx             # sidebar nav + header + <Outlet/>
+        │   ├── Layout.jsx             # sidebar nav + header + <Outlet/>; nav groups: Dashboard / Education / Employment / Data / Operations / PARTNERS
         │   ├── EducationSelector.jsx  # reusable cascading education selector (saves target_*)
         │   ├── EmploymentSelector.jsx # reusable cascading employment selector (saves target_*)
         │   ├── AdmissionRoadmap.jsx   # INTERACTIVE when given studentId prop (Pending/Current/Done); read-only without studentId
@@ -131,11 +136,13 @@ edu-erp/
             ├── Employers.jsx          # working (full CRUD, country + industry dropdowns)
             ├── Jobs.jsx               # working (full CRUD, qual-type requirement dropdowns)
             ├── DestinationExplorer.jsx # working (standalone read-only cascading selector, both tracks)
-            ├── Students.jsx           # working (full enriched profile + EducationSelector + interactive AdmissionRoadmap)
-            ├── Candidates.jsx         # working (full enriched profile + EmploymentSelector + interactive PlacementRoadmap)
+            ├── Students.jsx           # working (full enriched profile + EducationSelector + interactive AdmissionRoadmap + partner picker)
+            ├── Candidates.jsx         # working (full enriched profile + EmploymentSelector + interactive PlacementRoadmap + partner picker)
             ├── Applications.jsx       # working (Kanban: 8 cols = app_stage; drag-to-stage; create/edit drawer; student + program pickers)
             ├── JobApplications.jsx    # working (Kanban: 7 cols = job_stage; drag-to-stage; create/edit drawer; candidate + job pickers)
-            ├── Inquiries.jsx          # working (table + colored status badges; filter buttons; add/edit drawer with source + follow-up date)
+            ├── Inquiries.jsx          # working (table + colored status badges; filter buttons; add/edit drawer incl. partner picker)
+            ├── ReferralPartners.jsx   # working (list + add/edit drawer; commission formatted; active/inactive badge)
+            ├── ServiceFees.jsx        # working (list table; direction & status badges; filters; add/edit drawer with conditional payer link)
             ├── Tasks.jsx              # placeholder
             └── Accounting.jsx         # placeholder
 ```
@@ -165,9 +172,11 @@ edu-erp/
   - **inquiries** (CRUD; `GET` supports `?status=` filter; `assigned_to`/`created_by`/`converted_student_id` omitted until auth)
   - **applications** (CRUD; `GET` list enriches each row with `student_name`, `program_name`, `program_level` via bulk lookups; `PATCH` for stage change on drag)
   - **job_applications** (CRUD; `GET` list enriches each row with `candidate_name`, `job_title`, `employer_name`; `PATCH` for stage change on drag)
+  - **referral_partners** (CRUD; `GET` supports `?type=` & `?is_active=` filters)
+  - **service_fees** (CRUD; `GET` supports `?status=&direction=&partner_id=&student_id=&candidate_id=` filters; list enriches rows with `partner_name` / `student_name` / `candidate_name` via bulk lookups)
 
 ### Frontend (React + Vite + Tailwind)
-- App shell: sidebar with grouped nav (Dashboard, Education, Employment, Data, Operations), header, routed content area.
+- App shell: sidebar with grouped nav (Dashboard, Education, Employment, Data, Operations, **PARTNERS**), header, routed content area.
 - **Working pages:**
   - **Countries** — lists 39 countries
   - **Institutes** — full CRUD
@@ -178,30 +187,35 @@ edu-erp/
   - **Employers** — full CRUD with country + industry dropdowns; SSW fields
   - **Jobs** — full CRUD with employer dropdown + structured SSW language/skills requirement dropdowns from `qualification_types`
   - **Destination Explorer** — standalone read-only cascading selector for both tracks, toggled via Education/Employment switch
-  - **Students** — full enriched profile form (passport, financial, supporter, academic sections) + embedded `EducationSelector` saving `target_*` fields + **interactive** `AdmissionRoadmap` (Pending/Current/Done per step, persisted to `student_step_progress`)
-  - **Candidates** — full enriched profile form (passport, financial, work background, structured language/skills dropdowns from `qualification_types`) + embedded `EmploymentSelector` saving `target_*` fields + **interactive** `PlacementRoadmap` (Pending/Current/Done per step, persisted to `candidate_step_progress`; read-only in ADD mode)
-  - **Inquiries** — lead tracker table with colored status badges (new/contacted/qualified/converted/lost), status filter buttons, add/edit drawer (name, phone, email, source dropdown, interest_country_id, interest_level, status, follow_up_date, notes); `assigned_to`/`created_by`/`converted_student_id` omitted until auth
+  - **Students** — full enriched profile form (passport, financial, supporter, academic sections) + embedded `EducationSelector` saving `target_*` fields + **interactive** `AdmissionRoadmap` (Pending/Current/Done per step, persisted to `student_step_progress`) + optional "Referred By (Partner)" dropdown
+  - **Candidates** — full enriched profile form (passport, financial, work background, structured language/skills dropdowns from `qualification_types`) + embedded `EmploymentSelector` saving `target_*` fields + **interactive** `PlacementRoadmap` (Pending/Current/Done per step, persisted to `candidate_step_progress`; read-only in ADD mode) + optional "Referred By (Partner)" dropdown
+  - **Inquiries** — lead tracker table with colored status badges (new/contacted/qualified/converted/lost), status filter buttons, add/edit drawer (name, phone, email, source dropdown, interest_country_id, interest_level, status, follow_up_date, notes, **referred_by_partner_id** picker); `assigned_to`/`created_by`/`converted_student_id` omitted until auth
   - **Applications** — Kanban board with 8 columns = `app_stage` values (inquiry → profile_assessment → shortlisting → document_collection → application_submitted → offer_received → visa_processing → enrolled); native HTML5 drag-and-drop (no new npm dep); drag-to-change-stage persists via `PATCH`; create/edit drawer with student + program pickers, stage, status, decision_notes; `application_checklist` deferred
   - **Job Applications** — Kanban board with 7 columns = `job_stage` values (applied → screening → interview → offer → coe_processing → visa_processing → placed); same drag-and-drop pattern; create/edit drawer with candidate + job pickers; `job_application_checklist` deferred
+  - **Referral Partners** — list table + add/edit drawer; commission displayed formatted (e.g. "15000 BDT (fixed)" / "10% (percentage)"); active/inactive badge; nav under **PARTNERS** group
+  - **Service Fees** — list table showing Related To / Direction / Amount / Milestone / Status / Due Date; colored direction & status badges; status/direction filter buttons; add/edit drawer with payer_type selector (partner / student / other) and a **conditional link dropdown** that swaps by payer_type (partner→partner_id, student→student_id, other→candidate_id) and clears stale links on change using the explicit-null pattern; nav under **PARTNERS** group
 - **Reusable components:** `EducationSelector.jsx`, `EmploymentSelector.jsx`, `AdmissionRoadmap.jsx`, `PlacementRoadmap.jsx`
-- API client (`api.js`) talks to `/api`; Vite proxy forwards `/api` → backend. **Now has `get`, `post`, `patch`, `put`, and `delete` methods** (`put` was added this session — it was missing and caused PUT calls to fail).
+- API client (`api.js`) talks to `/api`; Vite proxy forwards `/api` → backend. **Has `get`, `post`, `patch`, `put`, and `delete` methods.**
 - Verified end-to-end: browser → API → Supabase → browser.
 
 ### Data entered so far
 - **39 countries** seeded (authentic ISO codes + currencies). Japan = id 1.
 - At least one real institute (**Yamaguchi University**), one program (**MOT / Master's**), and one admission template (**Japan Master's (Research)** with steps).
 - One seeded placement template: **Japan Nursing Care (SSW)** (country 1, industry 1) with steps.
+- Sample referral partner: **Sakura Japanese Language Center** (type: language_center, fixed 15000 BDT commission).
 
 ### Proven milestones
 - Full create/read/update/delete cycle working through the UI for all data-entry pages.
 - Cascading Destination Explorer working for both tracks.
 - Students: full enriched profiles saving; interactive roadmap progress (Pending → Current → Done) persisted per step per student.
-- Candidates: full enriched profiles saving including structured language/skills dropdowns; read-only Placement Roadmap showing template steps from `placement_templates`.
+- Candidates: full enriched profiles saving including structured language/skills dropdowns; interactive Placement Roadmap progress persisted per step.
 - Placement Templates page fully working (CRUD + ordered steps), in parity with Admission Templates.
-- Candidates: interactive Placement Roadmap progress (Pending → Current → Done) persisted per step per candidate via `candidate_step_progress` — employment track now at full parity with education.
-- Inquiries: lead pipeline table with status workflow and filtering, fully working.
+- Inquiries: lead pipeline table with status workflow, filtering, and partner picker, fully working.
 - Applications: Kanban board (8 stages, native drag-and-drop) for the education pipeline, fully working.
 - Job Applications: Kanban board (7 stages, native drag-and-drop) for the employment pipeline, fully working.
+- **Referral Partners: entity management page fully working (CRUD, formatted commission display, active/inactive badge).**
+- **Referral link: referred_by_partner_id picker added to Inquiries, Students, and Candidates forms; explicit-null clear pattern implemented to allow removing a link.**
+- **Service Fees: standalone tracker fully working (two directions, conditional payer link by payer_type, status/direction filters).**
 
 ---
 
@@ -223,8 +237,8 @@ edu-erp/
 - `programs` — level_category, level_label, department, course_name, costs, duration; **+ requirement fields: `language_test_accepted` (text), `min_language_level` (text), `moi_accepted` (bool)** (UUID id, institute_id is UUID)
 - `program_sessions` — session_name, start_date, application_deadline, seats, is_open (5-field set)
 - `admission_requirements` — per-program checklist template items
-- `students` — full profile: passport (number, issue_date, expiry, country), financial (annual_income float, income_currency, income_source), supporter (name, relation, occupation, income float, currency), academic (highest_qualification, academic_summary, career_summary, purpose), target_country/institute/program/session, status. Status values: **active / archived / enrolled / dropped**. `assigned_counselor` and `created_by` FK to `auth.users` exist but are NOT sent from the API until auth is wired.
-- `inquiries` — lead tracker (new → contacted → qualified → converted/lost)
+- `students` — full profile: passport (number, issue_date, expiry, country), financial (annual_income float, income_currency, income_source), supporter (name, relation, occupation, income float, currency), academic (highest_qualification, academic_summary, career_summary, purpose), target_country/institute/program/session, **referred_by_partner_id (uuid nullable FK → referral_partners)**, status. Status values: **active / archived / enrolled / dropped**. `assigned_counselor` and `created_by` FK to `auth.users` exist but are NOT sent from the API until auth is wired.
+- `inquiries` — lead tracker (new → contacted → qualified → converted/lost); **referred_by_partner_id (uuid nullable FK → referral_partners)**
 - `applications` + `application_checklist` — 8-stage education pipeline
 - `journey_stages` (8 seeded) + `student_journey` — original visual roadmap tables (not currently in use; superseded by `student_step_progress`)
 - `admission_templates` — **one row per (country_id INT + level_category text), UNIQUE on the pair**; reusable admission process
@@ -237,10 +251,14 @@ edu-erp/
 - `qualification_types` — JLPT, JFT-Basic, SSW Skills Test seeded; has `levels[]` array; INT id
 - `employers` — company database (UUID id, country_id INT, industry_field_id INT, is_ssw_registered, housing_support, contact fields)
 - `jobs` — openings (structured requirements via `req_language_qual_id` + `req_language_level`, `req_skills_qual_id`; salary range; start_period; positions_available)
-- `candidates` — job-seeker profile: passport, financial, work background (current_occupation, total_experience_years int, highest_qualification, work_history), structured language proficiency (language_qual_id int FK → qualification_types, language_level text), structured skills proficiency (skills_qual_id int FK, skills_detail text), target chain, status. Status values: **active / archived / placed / dropped** (note: "placed", not "enrolled"). `assigned_counselor` and `created_by` FK to `auth.users` exist but are NOT sent from the API until auth is wired.
+- `candidates` — job-seeker profile: passport, financial, work background (current_occupation, total_experience_years int, highest_qualification, work_history), structured language proficiency (language_qual_id int FK → qualification_types, language_level text), structured skills proficiency (skills_qual_id int FK, skills_detail text), target chain, **referred_by_partner_id (uuid nullable FK → referral_partners)**, status. Status values: **active / archived / placed / dropped** (note: "placed", not "enrolled"). `assigned_counselor` and `created_by` FK to `auth.users` exist but are NOT sent from the API until auth is wired.
 - `job_applications` + `job_application_checklist` — employment pipeline (job_stage enum)
 - `placement_templates` — **one row per (country_id INT + industry_field_id INT), UNIQUE on the pair**; id uuid PK; name, description, is_active. Parallel to `admission_templates`.
 - `placement_steps` — ordered steps per placement template (step_order, title, description, **free-text** timeframe). id uuid PK, template_id uuid FK → placement_templates ON DELETE CASCADE.
+
+**Partners & fees**
+- `referral_partners` — ongoing business relationships who send students/candidates. Columns: id (uuid PK), name (text NOT NULL), type (text CHECK IN ('firm','language_center','individual')), contact_person (text), phone (text), email (text), address (text), commission_basis (text CHECK IN ('percentage','fixed')), commission_rate (float), commission_currency (text default 'BDT'), notes (text), is_active (bool default true), created_at, updated_at.
+- `service_fees` — standalone fee tracker for both directions. Columns: id (uuid PK), direction (text CHECK IN ('incoming','outgoing') default 'incoming'), payer_type (text CHECK IN ('partner','student','other')), partner_id (uuid nullable FK → referral_partners), student_id (uuid nullable FK → students), candidate_id (uuid nullable FK → candidates), amount (float NOT NULL ≥ 0), currency (text default 'BDT'), milestone (text CHECK IN ('on_referral','on_coe','on_visa','on_enrollment','on_placement','custom')), description (text), status (text CHECK IN ('pending','invoiced','paid','cancelled') default 'pending'), due_date (date), paid_date (date), notes (text), created_at, updated_at. **RLS: finance-sensitive — uses `can_view_accounting()` for select/insert/update (owner/manager/accountant); `can_delete()` for delete. Matches the accounting table pattern.**
 
 **Shared / ops**
 - `profiles` — extends `auth.users`; role / position / team / team_leader_id; auto-created via trigger on signup
@@ -257,11 +275,11 @@ edu-erp/
 ### RLS helper functions
 - `current_user_role()` — reads role from profiles
 - `can_delete()` — true only for `owner` + `manager`
-- `can_view_accounting()` — `owner` + `manager` + `accountant` only (accounting is restricted)
+- `can_view_accounting()` — `owner` + `manager` + `accountant` only (accounting + service_fees are restricted)
 - `can_manage_tasks()` — `owner` + `manager` + `team_leader`
 
 ### Known security note (deferred)
-Backend currently connects with the **service-role key**, which **bypasses RLS**. So the API does not yet enforce who can delete — the DB rules exist but the backend acts as admin. This is fine while solo; **JWT auth + routing deletes through role checks is a required step before real staff log in.**
+Backend currently connects with the **service-role key**, which **bypasses RLS**. So the API does not yet enforce who can delete or who can view finance data — the DB rules exist but the backend acts as admin. This is fine while solo; **JWT auth + routing deletes through role checks is a required step before real staff log in.** Note: `service_fees` and the accounting tables already have finance-RLS policies in place — they will enforce correctly once auth is wired.
 
 ---
 
@@ -354,20 +372,22 @@ Keyed by **(country_id + industry_field_id)**, UNIQUE on the pair. Parallel to a
 - ✅ **C6 — Inquiries tracker:** `inquiries.py` router (CRUD + `?status=` filter) + `Inquiries.jsx` page (table, colored status badges, filter buttons, add/edit drawer). `assigned_to`/`created_by`/`converted_student_id` deferred until auth.
 - ✅ **C7 — Applications Kanban (education pipeline):** `applications.py` router (CRUD + enriched list with student_name/program_name/program_level + PATCH for stage) + `Applications.jsx` page (8-column Kanban = `app_stage`, native HTML5 drag-and-drop, create/edit drawer). `application_checklist` deferred.
 - ✅ **C8 — Job Applications Kanban (employment pipeline):** `job_applications.py` router (CRUD + enriched list with candidate_name/job_title/employer_name + PATCH for stage) + `JobApplications.jsx` page (7-column Kanban = `job_stage`, same drag-and-drop pattern, create/edit drawer). `job_application_checklist` deferred.
+- ✅ **C9 — Referral Partners + Service Fees (3-step build):**
+  - **Step 1:** `referral_partners` table migration + `referral_partners.py` router (CRUD, `?type=` & `?is_active=` filters) + `ReferralPartnerCreate`/`ReferralPartnerUpdate` schemas + `ReferralPartners.jsx` page (list + drawer, formatted commission, active/inactive badge) + PARTNERS nav group in `Layout.jsx`.
+  - **Step 2:** `*_add_referred_by_partner.sql` migration adds `referred_by_partner_id` (uuid nullable FK → referral_partners, indexed) to `inquiries`, `students`, `candidates`; field added to all six schemas (`InquiryCreate/Update`, `StudentCreate/Update`, `CandidateCreate/Update`) and an optional "Referred By (Partner)" dropdown on all three forms. Explicit-null pattern implemented in `buildPayload` so clearing the link sends JSON `null` rather than omitting the key (see Convention #19).
+  - **Step 3:** `service_fees` table migration (finance-RLS-gated via `can_view_accounting()`) + `service_fees.py` router (CRUD, multi-filter GET, enriched list with partner/student/candidate names) + `ServiceFeeCreate`/`ServiceFeeUpdate` schemas + `ServiceFees.jsx` page (list table, colored direction & status badges, status/direction filters, add/edit drawer with conditional payer link that swaps by payer_type and clears stale links on change). Covers both fee directions: incoming from a partner for students sent, incoming directly from a student for the Japan university application service; outgoing direction reserved for fees paid out to agents. Standalone tracker; accounting (transactions) tie-in is a LATER enhancement.
 
 ### Remaining (in order)
 
-1. **Referral Partners + commissions** (NEXT) — referral partners are ongoing business relationships (other firms, Japanese language centers in Bangladesh, individual agents) who send students/candidates. Needs: a `referral_partners` entity (name, type firm/language_center/individual, contact, default commission basis percentage/fixed + rate, notes, is_active), FK columns on inquiries/students/candidates, and commission/service-fee tracking wired into the existing `commissions` + `transactions` tables. Two fee directions: (a) service fee collected FROM a referral partner for students they send; (b) direct service fee FROM students for the Japan university application service (find supervisor, apply on behalf, interview prep). Status flow: pending → approved → paid, triggered at milestones (COE received / visa granted).
+1. **Deferred checklists** (NEXT) — `application_checklist` (seed items from program `admission_requirements`, tick off per application) and `job_application_checklist`. Tables and DB structure already exist; no UI or endpoints yet.
 
-2. **Deferred checklists** — `application_checklist` (seed from program `admission_requirements`, tick off per application) and `job_application_checklist`. Tables and DB structure already exist; no UI or endpoints yet.
+2. **Inquiry → Student/Candidate one-click conversion** — set inquiry `status='converted'`, create the student/candidate record, store `converted_student_id` on the inquiry. (Field exists on `inquiries` table; deferred until auth is wired for `created_by`.)
 
-3. **Inquiry → Student/Candidate one-click conversion** — set inquiry `status='converted'`, create the student/candidate record, store `converted_student_id` on the inquiry. (Field exists on `inquiries` table; deferred until auth is wired for `created_by`.)
+3. **Tasks UI, Accounting UI (and optionally wire `service_fees` into `transactions`), Dashboards.**
 
-4. **Tasks UI, Accounting UI, Dashboards.**
+4. **Authentication + RBAC enforcement** — backend still uses the service key and bypasses RLS entirely; deletes not yet role-gated at the API layer; `profiles` table is empty (that's why `assigned_to`/`created_by`/`assigned_counselor` are omitted everywhere). Note: `service_fees` and accounting tables already have finance-RLS policies — they will enforce correctly once auth is wired. Wire Supabase Auth, issue JWTs, route the backend through authenticated sessions so RLS actually enforces per-user access. **Critical before any real staff log in.**
 
-5. **Authentication + RBAC enforcement** — backend still uses the service key and bypasses RLS entirely; deletes not yet role-gated at the API layer; `profiles` table is empty (that's why `assigned_to`/`created_by`/`assigned_counselor` are omitted everywhere). Wire Supabase Auth, issue JWTs, route the backend through authenticated sessions so RLS actually enforces per-user access. **Critical before any real staff log in.**
-
-6. **Google Drive document integration** (service-account approach), then **Render deployment**.
+5. **Google Drive document integration** (service-account approach), then **Render deployment**.
 
 ---
 
@@ -375,10 +395,10 @@ Keyed by **(country_id + industry_field_id)**, UNIQUE on the pair. Parallel to a
 
 1. **One step at a time.** Small, single-task chunks. Finish, confirm "done", then next. When the user says "done"/"next", assume the prior step worked.
 2. **Terminal vs editor:** SQL and code go in the **VS Code editor**, never pasted into the terminal. Commands go in the terminal.
-3. **UUID vs INT — the recurring trap.** Several tables use **UUID** primary keys (institutes, programs, employers, candidates, students, admission_templates, admission_steps, placement_templates, placement_steps, jobs, student_step_progress, etc.); reference/lookup tables use **INT** (countries, industry_fields, qualification_types, accounts). Backend path params and schema FK types **must match** (UUID → `str`, INT → `int`). This bug bit `institute_id`, `template_id`, and `program_id`. Always check FK types before writing a new router or schema.
+3. **UUID vs INT — the recurring trap.** Several tables use **UUID** primary keys (institutes, programs, employers, candidates, students, admission_templates, admission_steps, placement_templates, placement_steps, jobs, referral_partners, service_fees, student_step_progress, etc.); reference/lookup tables use **INT** (countries, industry_fields, qualification_types, accounts). Backend path params and schema FK types **must match** (UUID → `str`, INT → `int`). This bug bit `institute_id`, `template_id`, and `program_id`. Always check FK types before writing a new router or schema.
 4. **Money fields: use `float`, NEVER `Decimal`.** `Decimal` is not JSON-serializable and crashed the institutes POST. Store **amount + currency, default BDT, never hardcode FX rates**. All numeric/money fields are `float` in Pydantic schemas.
 5. **API under `/api` prefix.** All backend routes are mounted under `/api`; the Vite proxy has a **single** `/api` rule. React Router owns all other paths. New endpoints are auto-covered — no proxy edits needed.
-6. **RLS pattern for every table:** select/insert/update for `authenticated`; **delete via `can_delete()`** (owner + manager only). Accounting tables restricted via `can_view_accounting()`. Activity log is immutable (insert + select only). Task management for others via `can_manage_tasks()`.
+6. **RLS pattern for every table:** select/insert/update for `authenticated`; **delete via `can_delete()`** (owner + manager only). Accounting tables and `service_fees` restricted via `can_view_accounting()`. Activity log is immutable (insert + select only). Task management for others via `can_manage_tasks()`.
 7. **Write significant actions to `activity_log`** (create/update/delete/stage_change/assign), so the audit trail and manager/owner reports stay complete.
 8. **Roles vs job titles.** Permission tiers live in the `user_role` enum (owner > manager > team_leader > staff/accountant > student). Job titles (Business Developer, Marketing Officer, Admission Officer, Application Officer, Counselor, Language Instructor) live in `profiles.position`; teams in `profiles.team`; reporting in `profiles.team_leader_id`. **team_leader CANNOT delete.**
 9. **Reusable process templates for both tracks.** Admission templates keyed by (country + study level); placement templates keyed by (country + industry_field). Both use free-text timeframes (never structured dates). Both follow the same DB + router + frontend pattern.
@@ -390,25 +410,17 @@ Keyed by **(country_id + industry_field_id)**, UNIQUE on the pair. Parallel to a
 15. **Status values differ between tracks.** Students: `active / archived / enrolled / dropped`. Candidates: `active / archived / placed / dropped` (note: "placed", not "enrolled").
 16. **Target chain field types must be respected.** Students: `target_country_id` INT, `target_institute_id` / `target_program_id` / `target_session_id` UUID. Candidates: `target_country_id` INT, `target_industry_id` INT, `target_employer_id` / `target_job_id` UUID, `target_start_period` text. Mixing UUID and INT on these will silently fail.
 17. **Both roadmap components are conditionally interactive.** `AdmissionRoadmap.jsx` renders Pending/Current/Done controls (hitting `student_progress.py`) when a `studentId` prop is passed; stays read-only without it (Destination Explorer, Students ADD mode). `PlacementRoadmap.jsx` renders the same interactive controls (hitting `candidate_progress.py`) when a `candidateId` prop is passed; stays read-only without it (Candidates ADD mode). This pattern is intentional — no ID exists in ADD mode.
-18. **`api.js` now has all five HTTP methods:** `get`, `post`, `patch`, `put`, `delete`. The `put` method was missing until this session and caused silent failures on PUT calls — always use `api.put(...)` for upserts, never fall back to `api.post(...)`.
+18. **`api.js` now has all five HTTP methods:** `get`, `post`, `patch`, `put`, `delete`. The `put` method was missing until an earlier session and caused silent failures on PUT calls — always use `api.put(...)` for upserts, never fall back to `api.post(...)`.
+19. **Explicit-null pattern for clearing optional FK fields.** When a user clears an optional FK link (e.g. "Referred By Partner" set back to "none"), the frontend `buildPayload` must **always** include the field as either the UUID string or JSON `null` — never omit it and never send an empty string. On the backend, the router's PATCH handler must detect a sent-but-null value via `model_dump(exclude_unset=True)` and apply `None` to clear the column. The default `model_dump(exclude_none=True)` would silently drop the key and leave the old value in place. This pattern is required wherever an optional FK can be cleared by the user. Currently applied to `referred_by_partner_id` on inquiries/students/candidates and to payer link fields on service_fees.
+20. **`service_fees` is finance-RLS-gated.** The table uses `can_view_accounting()` for select/insert/update, matching the accounting tables. When auth is wired, only owner, manager, and accountant roles will be able to see or edit fee records.
 
 ---
 
 ## 11. Immediate Next Step
 
-**Remaining chunk #1 — Referral Partners + commissions.**
+**Remaining chunk #1 — Deferred checklists.**
 
-Referral partners are firms, Japanese language centers in Bangladesh, and individual agents who send students/candidates to Advance Educonsultancy. Two fee directions exist: (a) service fee collected FROM a referral partner for each student they send, and (b) direct service fee FROM a student for the Japan university application service (finding a supervisor, applying on behalf, interview prep). Commission status flow: pending → approved → paid, triggered at milestones (COE received / visa granted).
-
-Build order:
-1. Migration: `referral_partners` table (id uuid PK, name text NOT NULL, type text CHECK IN ('firm','language_center','individual'), contact_name text, contact_phone text, contact_email text, default_commission_basis text CHECK IN ('percentage','fixed'), default_commission_rate float, notes text, is_active bool default true, created_at timestamptz, updated_at timestamptz).
-2. Migration: add nullable `referral_partner_id uuid FK → referral_partners` to `inquiries`, `students`, `candidates`.
-3. `referral_partners.py` router: full CRUD. Mount in `main.py`.
-4. `ReferralPartnerCreate`/`ReferralPartnerUpdate` schemas in `schemas.py`.
-5. `ReferralPartners.jsx` page: table + add/edit drawer. Nav link under Operations group.
-6. Add partner picker dropdown to the Inquiries form and the Students/Candidates forms.
-7. Commission tracking: wire service fees into the existing `commissions` + `transactions` tables; respect the pending → approved → paid flow.
-8. Test end-to-end. Commit: `"Add referral partners entity and commission tracking"`
+`application_checklist` and `job_application_checklist` tables already exist in the database. The goal is to: (a) seed checklist items from the program's `admission_requirements` when a new application is created; (b) provide a UI to tick off items per application inside the Applications Kanban drawer; (c) mirror the same flow for `job_application_checklist` inside the Job Applications drawer.
 
 ---
 
