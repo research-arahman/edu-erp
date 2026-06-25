@@ -40,6 +40,8 @@ const EMPTY_FORM = {
   target_program_id:      null,
   target_session_id:      null,
   _level_category:        null, // transient — not saved to DB
+  // Referral
+  referred_by_partner_id: '',
 };
 
 const STATUS_LABELS = {
@@ -85,6 +87,8 @@ function buildPayload(form) {
   p.target_institute_id = form.target_institute_id || null;
   p.target_program_id   = form.target_program_id   || null;
   p.target_session_id   = form.target_session_id   || null;
+  // Referral — always include so null clears the column on PATCH
+  p.referred_by_partner_id = form.referred_by_partner_id || null;
   // strip _level_category — it's transient
   return p;
 }
@@ -133,6 +137,7 @@ function StatusBadge({ status }) {
 export default function Students() {
   const [students,     setStudents]     = useState([]);
   const [countries,    setCountries]    = useState([]);
+  const [partners,     setPartners]     = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState(null);
 
@@ -152,10 +157,11 @@ export default function Students() {
   }
 
   useEffect(() => {
-    Promise.all([api.get('/students'), api.get('/countries')])
-      .then(([studs, cntrs]) => {
+    Promise.all([api.get('/students'), api.get('/countries'), api.get('/referral-partners')])
+      .then(([studs, cntrs, parts]) => {
         setStudents(studs);
         setCountries(cntrs);
+        setPartners(parts);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -209,6 +215,8 @@ export default function Students() {
       target_program_id:      student.target_program_id      ?? null,
       target_session_id:      student.target_session_id      ?? null,
       _level_category:        null, // EducationSelector will report this after loading
+      // Referral
+      referred_by_partner_id: student.referred_by_partner_id ?? '',
     });
     setFormError(null);
     setSelected(student);
@@ -498,6 +506,21 @@ export default function Students() {
                     </select>
                   </Field>
                 </div>
+
+                <Field label="Referred By (Partner)">
+                  <select
+                    className={INPUT}
+                    name="referred_by_partner_id"
+                    value={form.referred_by_partner_id}
+                    onChange={handleChange}
+                    disabled={saving}
+                  >
+                    <option value="">— none / direct —</option>
+                    {partners.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </Field>
 
                 <Field label="Address">
                   <textarea

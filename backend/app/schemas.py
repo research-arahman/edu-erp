@@ -283,6 +283,7 @@ class StudentCreate(BaseModel):
     target_program_id: Optional[str] = None
     target_session_id: Optional[str] = None
     status: Optional[str] = None
+    referred_by_partner_id: Optional[str] = None
 
 
 class StudentUpdate(BaseModel):
@@ -318,6 +319,7 @@ class StudentUpdate(BaseModel):
     target_program_id: Optional[str] = None
     target_session_id: Optional[str] = None
     status: Optional[str] = None
+    referred_by_partner_id: Optional[str] = None
 
 
 # ── Student Step Progress ─────────────────────────────────────────────────────
@@ -364,6 +366,7 @@ class CandidateCreate(BaseModel):
     target_job_id: Optional[str] = None
     target_start_period: Optional[str] = None
     status: Optional[str] = None
+    referred_by_partner_id: Optional[str] = None
 
 
 class CandidateUpdate(BaseModel):
@@ -401,6 +404,7 @@ class CandidateUpdate(BaseModel):
     target_job_id: Optional[str] = None
     target_start_period: Optional[str] = None
     status: Optional[str] = None
+    referred_by_partner_id: Optional[str] = None
 
 
 # ── Placement Templates ───────────────────────────────────────────────────────
@@ -449,6 +453,7 @@ class InquiryCreate(BaseModel):
     status: Optional[str] = None
     follow_up_date: Optional[str] = None
     notes: Optional[str] = None
+    referred_by_partner_id: Optional[str] = None
 
 
 class InquiryUpdate(BaseModel):
@@ -461,6 +466,7 @@ class InquiryUpdate(BaseModel):
     status: Optional[str] = None
     follow_up_date: Optional[str] = None
     notes: Optional[str] = None
+    referred_by_partner_id: Optional[str] = None
 
 
 # ── Applications ──────────────────────────────────────────────────────────────

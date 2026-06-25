@@ -33,6 +33,8 @@ def create_candidate(body: CandidateCreate):
 @router.patch("/{candidate_id}")
 def update_candidate(candidate_id: str, body: CandidateUpdate):
     payload = body.model_dump(exclude_none=True)
+    if 'referred_by_partner_id' in body.model_dump(exclude_unset=True) and body.referred_by_partner_id is None:
+        payload['referred_by_partner_id'] = None
     if not payload:
         raise HTTPException(status_code=400, detail="No fields to update")
     result = supabase.table("candidates").update(payload).eq("id", candidate_id).execute()

@@ -40,6 +40,8 @@ const EMPTY_FORM = {
   target_industry_id:     null,
   target_employer_id:     null,
   target_job_id:          null,
+  // Referral
+  referred_by_partner_id: '',
 };
 
 const STATUS_LABELS = {
@@ -92,6 +94,8 @@ function buildPayload(form) {
   p.target_industry_id = form.target_industry_id != null ? Number(form.target_industry_id) : null;
   p.target_employer_id = form.target_employer_id || null;
   p.target_job_id      = form.target_job_id      || null;
+  // Referral — always include so null clears the column on PATCH
+  p.referred_by_partner_id = form.referred_by_partner_id || null;
   return p;
 }
 
@@ -150,6 +154,7 @@ export default function Candidates() {
   const [candidates,   setCandidates]   = useState([]);
   const [countries,    setCountries]    = useState([]);
   const [qualTypes,    setQualTypes]    = useState([]);
+  const [partners,     setPartners]     = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState(null);
 
@@ -171,11 +176,13 @@ export default function Candidates() {
       api.get('/candidates'),
       api.get('/countries'),
       api.get('/qualification-types'),
+      api.get('/referral-partners'),
     ])
-      .then(([cands, cntrs, quals]) => {
+      .then(([cands, cntrs, quals, parts]) => {
         setCandidates(cands);
         setCountries(cntrs);
         setQualTypes(quals);
+        setPartners(parts);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -231,6 +238,8 @@ export default function Candidates() {
       target_industry_id:     candidate.target_industry_id     ?? null,
       target_employer_id:     candidate.target_employer_id     ?? null,
       target_job_id:          candidate.target_job_id          ?? null,
+      // Referral
+      referred_by_partner_id: candidate.referred_by_partner_id ?? '',
     });
     setFormError(null);
     setSelected(candidate);
@@ -518,6 +527,21 @@ export default function Candidates() {
                     </select>
                   </Field>
                 </div>
+
+                <Field label="Referred By (Partner)">
+                  <select
+                    className={INPUT}
+                    name="referred_by_partner_id"
+                    value={form.referred_by_partner_id}
+                    onChange={handleChange}
+                    disabled={saving}
+                  >
+                    <option value="">— none / direct —</option>
+                    {partners.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </Field>
 
                 <Field label="Address">
                   <textarea

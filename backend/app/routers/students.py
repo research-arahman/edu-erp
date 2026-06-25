@@ -33,6 +33,8 @@ def create_student(body: StudentCreate):
 @router.patch("/{student_id}")
 def update_student(student_id: str, body: StudentUpdate):
     payload = body.model_dump(exclude_none=True)
+    if 'referred_by_partner_id' in body.model_dump(exclude_unset=True) and body.referred_by_partner_id is None:
+        payload['referred_by_partner_id'] = None
     if not payload:
         raise HTTPException(status_code=400, detail="No fields to update")
     result = supabase.table("students").update(payload).eq("id", student_id).execute()

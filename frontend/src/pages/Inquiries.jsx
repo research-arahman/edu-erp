@@ -4,15 +4,16 @@ import { api } from '../lib/api';
 // ── constants ─────────────────────────────────────────────────────────────────
 
 const EMPTY_FORM = {
-  name:                '',
-  phone:               '',
-  email:               '',
-  source:              '',
-  interest_country_id: '',
-  interest_level:      '',
-  status:              'new',
-  follow_up_date:      '',
-  notes:               '',
+  name:                    '',
+  phone:                   '',
+  email:                   '',
+  source:                  '',
+  interest_country_id:     '',
+  interest_level:          '',
+  status:                  'new',
+  follow_up_date:          '',
+  notes:                   '',
+  referred_by_partner_id:  '',
 };
 
 const STATUS_OPTIONS = ['new', 'contacted', 'qualified', 'converted', 'lost'];
@@ -42,13 +43,15 @@ const LEVEL_OPTIONS = [
 
 function buildPayload(form) {
   const p = { name: form.name.trim(), status: form.status || 'new' };
-  if (form.phone.trim())          p.phone               = form.phone.trim();
-  if (form.email.trim())          p.email               = form.email.trim();
-  if (form.source)                p.source              = form.source;
-  if (form.interest_country_id)   p.interest_country_id = Number(form.interest_country_id);
-  if (form.interest_level)        p.interest_level      = form.interest_level;
-  if (form.follow_up_date)        p.follow_up_date      = form.follow_up_date;
-  if (form.notes.trim())          p.notes               = form.notes.trim();
+  if (form.phone.trim())             p.phone                  = form.phone.trim();
+  if (form.email.trim())             p.email                  = form.email.trim();
+  if (form.source)                   p.source                 = form.source;
+  if (form.interest_country_id)      p.interest_country_id    = Number(form.interest_country_id);
+  if (form.interest_level)           p.interest_level         = form.interest_level;
+  if (form.follow_up_date)           p.follow_up_date         = form.follow_up_date;
+  if (form.notes.trim())             p.notes                  = form.notes.trim();
+  // Referral — always include so null clears the column on PATCH
+  p.referred_by_partner_id = form.referred_by_partner_id || null;
   return p;
 }
 
@@ -97,6 +100,7 @@ function StatusBadge({ status }) {
 export default function Inquiries() {
   const [inquiries,  setInquiries]  = useState([]);
   const [countries,  setCountries]  = useState([]);
+  const [partners,   setPartners]   = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
   const [filter,     setFilter]     = useState('all');
@@ -114,10 +118,11 @@ export default function Inquiries() {
   }
 
   useEffect(() => {
-    Promise.all([api.get('/inquiries'), api.get('/countries')])
-      .then(([inqs, cntrs]) => {
+    Promise.all([api.get('/inquiries'), api.get('/countries'), api.get('/referral-partners')])
+      .then(([inqs, cntrs, parts]) => {
         setInquiries(inqs);
         setCountries(cntrs);
+        setPartners(parts);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -140,15 +145,16 @@ export default function Inquiries() {
 
   function openEdit(inquiry) {
     setForm({
-      name:                inquiry.name                ?? '',
-      phone:               inquiry.phone               ?? '',
-      email:               inquiry.email               ?? '',
-      source:              inquiry.source              ?? '',
-      interest_country_id: inquiry.interest_country_id ?? '',
-      interest_level:      inquiry.interest_level      ?? '',
-      status:              inquiry.status              ?? 'new',
-      follow_up_date:      inquiry.follow_up_date      ?? '',
-      notes:               inquiry.notes               ?? '',
+      name:                    inquiry.name                    ?? '',
+      phone:                   inquiry.phone                   ?? '',
+      email:                   inquiry.email                   ?? '',
+      source:                  inquiry.source                  ?? '',
+      interest_country_id:     inquiry.interest_country_id     ?? '',
+      interest_level:          inquiry.interest_level          ?? '',
+      status:                  inquiry.status                  ?? 'new',
+      follow_up_date:          inquiry.follow_up_date          ?? '',
+      notes:                   inquiry.notes                   ?? '',
+      referred_by_partner_id:  inquiry.referred_by_partner_id  ?? '',
     });
     setFormError(null);
     setSelected(inquiry);
@@ -408,21 +414,37 @@ export default function Inquiries() {
                   </Field>
                 </div>
 
-                {/* Source */}
-                <Field label="Source">
-                  <select
-                    className={INPUT}
-                    name="source"
-                    value={form.source}
-                    onChange={handleChange}
-                    disabled={saving}
-                  >
-                    <option value="">— select —</option>
-                    {SOURCE_OPTIONS.map((s) => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
-                </Field>
+                {/* Source + Referred By */}
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Source">
+                    <select
+                      className={INPUT}
+                      name="source"
+                      value={form.source}
+                      onChange={handleChange}
+                      disabled={saving}
+                    >
+                      <option value="">— select —</option>
+                      {SOURCE_OPTIONS.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Referred By (Partner)">
+                    <select
+                      className={INPUT}
+                      name="referred_by_partner_id"
+                      value={form.referred_by_partner_id}
+                      onChange={handleChange}
+                      disabled={saving}
+                    >
+                      <option value="">— none / direct —</option>
+                      {partners.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
 
                 {/* Interest Country + Level */}
                 <div className="grid grid-cols-2 gap-4">
