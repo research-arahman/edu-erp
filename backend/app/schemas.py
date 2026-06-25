@@ -461,3 +461,27 @@ class InquiryUpdate(BaseModel):
     status: Optional[str] = None
     follow_up_date: Optional[str] = None
     notes: Optional[str] = None
+
+
+# ── Applications ──────────────────────────────────────────────────────────────
+
+class ApplicationCreate(BaseModel):
+    student_id: str
+    program_id: str
+    session_id: Optional[str] = None
+    stage: Optional[str] = None
+    status: Optional[str] = None
+    submitted_at: Optional[str] = None
+    offer_received_at: Optional[str] = None
+    decision_notes: Optional[str] = None
+
+
+class ApplicationUpdate(BaseModel):
+    student_id: Optional[str] = None
+    program_id: Optional[str] = None
+    session_id: Optional[str] = None
+    stage: Optional[str] = None
+    status: Optional[str] = None
+    submitted_at: Optional[str] = None
+    offer_received_at: Optional[str] = None
+    decision_notes: Optional[str] = None
