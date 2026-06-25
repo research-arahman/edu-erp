@@ -18,6 +18,7 @@ import Accounting from './pages/Accounting';
 import AdmissionTemplates from './pages/AdmissionTemplates';
 import PlacementTemplates from './pages/PlacementTemplates';
 import DestinationExplorer from './pages/DestinationExplorer';
+import ReferralPartners from './pages/ReferralPartners';
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="inquiries" element={<Inquiries />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="accounting" element={<Accounting />} />
+          <Route path="referral-partners" element={<ReferralPartners />} />
         </Route>
       </Routes>
     </BrowserRouter>

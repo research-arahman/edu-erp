@@ -36,6 +36,12 @@ const NAV = [
     ],
   },
   {
+    group: 'Partners',
+    items: [
+      { to: '/referral-partners', label: 'Referral Partners' },
+    ],
+  },
+  {
     group: 'Operations',
     items: [
       { to: '/inquiries', label: 'Inquiries' },

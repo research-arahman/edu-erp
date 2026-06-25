@@ -487,6 +487,36 @@ class ApplicationUpdate(BaseModel):
     decision_notes: Optional[str] = None
 
 
+# ── Referral Partners ─────────────────────────────────────────────────────────
+
+class ReferralPartnerCreate(BaseModel):
+    name: str
+    type: Optional[str] = None
+    contact_person: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    commission_basis: Optional[str] = None
+    commission_rate: Optional[float] = None
+    commission_currency: Optional[str] = None
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ReferralPartnerUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    contact_person: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    commission_basis: Optional[str] = None
+    commission_rate: Optional[float] = None
+    commission_currency: Optional[str] = None
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 # ── Job Applications ───────────────────────────────────────────────────────────
 
 class JobApplicationCreate(BaseModel):
