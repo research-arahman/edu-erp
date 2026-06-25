@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import EmploymentSelector from '../components/EmploymentSelector';
 import PlacementRoadmap from '../components/PlacementRoadmap';
+import { matchesQuery } from '../lib/search';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,8 @@ export default function Candidates() {
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState(null);
 
+  const [search,       setSearch]       = useState('');
+
   const [panel,        setPanel]        = useState(null); // null | 'add' | 'edit'
   const [selected,     setSelected]     = useState(null);
   const [form,         setForm]         = useState(EMPTY_FORM);
@@ -191,6 +194,11 @@ export default function Candidates() {
   const countryMap   = Object.fromEntries(countries.map((c) => [c.id, c.name]));
   const langQuals    = qualTypes.filter((q) => q.category === 'language');
   const skillsQuals  = qualTypes.filter((q) => q.category === 'skills');
+
+  const filtered = useMemo(
+    () => candidates.filter((c) => matchesQuery(c, search)),
+    [candidates, search],
+  );
 
   // ── panel helpers ──────────────────────────────────────────────────────────
 
@@ -341,61 +349,102 @@ export default function Candidates() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Search + Table */}
       {!loading && !error && (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                {['Full Name', 'Nationality', 'Target Country', 'Status', ''].map((col) => (
-                  <th
-                    key={col}
-                    className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {candidates.length === 0 ? (
+        <>
+          {/* Search box */}
+          <div className="mb-4">
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+                <svg
+                  className="h-4 w-4 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+                  />
+                </svg>
+              </div>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, email, phone or date of birth…"
+                className="w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm
+                           focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            {search.trim() && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                {filtered.length === 0
+                  ? 'No matches'
+                  : `${filtered.length} of ${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} shown`}
+              </p>
+            )}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-sm text-gray-400">
-                    No candidates yet — add one above.
-                  </td>
-                </tr>
-              ) : (
-                candidates.map((c) => (
-                  <tr
-                    key={c.id}
-                    onClick={() => openEdit(c)}
-                    className="cursor-pointer transition-colors hover:bg-gray-50"
-                  >
-                    <td className="px-5 py-3 font-medium text-gray-900">{c.full_name}</td>
-                    <td className="px-5 py-3 text-gray-600">{c.nationality ?? '—'}</td>
-                    <td className="px-5 py-3 text-gray-600">
-                      {c.target_country_id ? (countryMap[c.target_country_id] ?? '—') : '—'}
-                    </td>
-                    <td className="px-5 py-3">
-                      <StatusBadge status={c.status} />
-                    </td>
-                    <td
-                      className="px-5 py-3 text-right"
-                      onClick={(e) => e.stopPropagation()}
+                  {['Full Name', 'Nationality', 'Target Country', 'Status', ''].map((col) => (
+                    <th
+                      key={col}
+                      className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
                     >
-                      <button
-                        onClick={(e) => handleDelete(e, c)}
-                        className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
-                      >
-                        Delete
-                      </button>
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-16 text-center text-sm text-gray-400">
+                      {search.trim()
+                        ? `No matches for "${search.trim()}"`
+                        : 'No candidates yet — add one above.'}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filtered.map((c) => (
+                    <tr
+                      key={c.id}
+                      onClick={() => openEdit(c)}
+                      className="cursor-pointer transition-colors hover:bg-gray-50"
+                    >
+                      <td className="px-5 py-3 font-medium text-gray-900">{c.full_name}</td>
+                      <td className="px-5 py-3 text-gray-600">{c.nationality ?? '—'}</td>
+                      <td className="px-5 py-3 text-gray-600">
+                        {c.target_country_id ? (countryMap[c.target_country_id] ?? '—') : '—'}
+                      </td>
+                      <td className="px-5 py-3">
+                        <StatusBadge status={c.status} />
+                      </td>
+                      <td
+                        className="px-5 py-3 text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={(e) => handleDelete(e, c)}
+                          className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* ── Slide-in panel ─────────────────────────────────────────────────── */}

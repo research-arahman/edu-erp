@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import EducationSelector from '../components/EducationSelector';
 import AdmissionRoadmap from '../components/AdmissionRoadmap';
+import { matchesQuery } from '../lib/search';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -141,6 +142,8 @@ export default function Students() {
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState(null);
 
+  const [search,       setSearch]       = useState('');
+
   const [panel,        setPanel]        = useState(null); // null | 'add' | 'edit'
   const [selected,     setSelected]     = useState(null);
   const [form,         setForm]         = useState(EMPTY_FORM);
@@ -168,6 +171,11 @@ export default function Students() {
   }, []);
 
   const countryMap = Object.fromEntries(countries.map((c) => [c.id, c.name]));
+
+  const filtered = useMemo(
+    () => students.filter((s) => matchesQuery(s, search)),
+    [students, search],
+  );
 
   // ── panel helpers ──────────────────────────────────────────────────────────
 
@@ -320,61 +328,102 @@ export default function Students() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Search + Table */}
       {!loading && !error && (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                {['Full Name', 'Nationality', 'Target Country', 'Status', ''].map((col) => (
-                  <th
-                    key={col}
-                    className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {students.length === 0 ? (
+        <>
+          {/* Search box */}
+          <div className="mb-4">
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+                <svg
+                  className="h-4 w-4 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+                  />
+                </svg>
+              </div>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, email, phone or date of birth…"
+                className="w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm
+                           focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            {search.trim() && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                {filtered.length === 0
+                  ? 'No matches'
+                  : `${filtered.length} of ${students.length} student${students.length !== 1 ? 's' : ''} shown`}
+              </p>
+            )}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-sm text-gray-400">
-                    No students yet — add one above.
-                  </td>
-                </tr>
-              ) : (
-                students.map((s) => (
-                  <tr
-                    key={s.id}
-                    onClick={() => openEdit(s)}
-                    className="cursor-pointer transition-colors hover:bg-gray-50"
-                  >
-                    <td className="px-5 py-3 font-medium text-gray-900">{s.full_name}</td>
-                    <td className="px-5 py-3 text-gray-600">{s.nationality ?? '—'}</td>
-                    <td className="px-5 py-3 text-gray-600">
-                      {s.target_country_id ? (countryMap[s.target_country_id] ?? '—') : '—'}
-                    </td>
-                    <td className="px-5 py-3">
-                      <StatusBadge status={s.status} />
-                    </td>
-                    <td
-                      className="px-5 py-3 text-right"
-                      onClick={(e) => e.stopPropagation()}
+                  {['Full Name', 'Nationality', 'Target Country', 'Status', ''].map((col) => (
+                    <th
+                      key={col}
+                      className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
                     >
-                      <button
-                        onClick={(e) => handleDelete(e, s)}
-                        className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
-                      >
-                        Delete
-                      </button>
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-16 text-center text-sm text-gray-400">
+                      {search.trim()
+                        ? `No matches for "${search.trim()}"`
+                        : 'No students yet — add one above.'}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filtered.map((s) => (
+                    <tr
+                      key={s.id}
+                      onClick={() => openEdit(s)}
+                      className="cursor-pointer transition-colors hover:bg-gray-50"
+                    >
+                      <td className="px-5 py-3 font-medium text-gray-900">{s.full_name}</td>
+                      <td className="px-5 py-3 text-gray-600">{s.nationality ?? '—'}</td>
+                      <td className="px-5 py-3 text-gray-600">
+                        {s.target_country_id ? (countryMap[s.target_country_id] ?? '—') : '—'}
+                      </td>
+                      <td className="px-5 py-3">
+                        <StatusBadge status={s.status} />
+                      </td>
+                      <td
+                        className="px-5 py-3 text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={(e) => handleDelete(e, s)}
+                          className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* ── Slide-in panel ─────────────────────────────────────────────────── */}
