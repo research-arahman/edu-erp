@@ -39,6 +39,7 @@ const NAV = [
     group: 'Partners',
     items: [
       { to: '/referral-partners', label: 'Referral Partners' },
+      { to: '/service-fees',      label: 'Service Fees' },
     ],
   },
   {

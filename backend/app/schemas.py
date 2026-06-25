@@ -523,6 +523,40 @@ class ReferralPartnerUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+# ── Service Fees ──────────────────────────────────────────────────────────────
+
+class ServiceFeeCreate(BaseModel):
+    amount: float
+    direction: Optional[str] = None
+    payer_type: Optional[str] = None
+    partner_id: Optional[str] = None
+    student_id: Optional[str] = None
+    candidate_id: Optional[str] = None
+    currency: Optional[str] = None
+    milestone: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    due_date: Optional[str] = None
+    paid_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ServiceFeeUpdate(BaseModel):
+    amount: Optional[float] = None
+    direction: Optional[str] = None
+    payer_type: Optional[str] = None
+    partner_id: Optional[str] = None
+    student_id: Optional[str] = None
+    candidate_id: Optional[str] = None
+    currency: Optional[str] = None
+    milestone: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    due_date: Optional[str] = None
+    paid_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
 # ── Job Applications ───────────────────────────────────────────────────────────
 
 class JobApplicationCreate(BaseModel):
