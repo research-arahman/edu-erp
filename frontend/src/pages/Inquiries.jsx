@@ -110,6 +110,8 @@ export default function Inquiries() {
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
   const [formError,  setFormError]  = useState(null);
+  const [converting, setConverting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState(null);
 
   // ── data loading ───────────────────────────────────────────────────────────
 
@@ -198,6 +200,30 @@ export default function Inquiries() {
     }
   }
 
+  async function handleConvert() {
+    if (
+      !window.confirm(
+        'Convert this inquiry into a student? This creates a new student record carrying over their name, contact, target country, and referral partner.'
+      )
+    )
+      return;
+
+    setConverting(true);
+    setFormError(null);
+    try {
+      const res = await api.post(`/inquiries/${selected.id}/convert`, {});
+      const { student, inquiry } = res;
+      await loadInquiries();
+      setSuccessMsg(`Converted — new student created: ${student.full_name}.`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+      closePanel();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setConverting(false);
+    }
+  }
+
   async function handleDelete(e, inquiry) {
     e.stopPropagation();
     if (!window.confirm(`Delete inquiry for "${inquiry.name}"? This cannot be undone.`)) return;
@@ -230,6 +256,19 @@ export default function Inquiries() {
           + Add Inquiry
         </button>
       </div>
+
+      {/* Convert success banner */}
+      {successMsg && (
+        <div className="mb-4 flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-800">
+          <span>✓ {successMsg}</span>
+          <button
+            onClick={() => setSuccessMsg(null)}
+            className="ml-4 text-emerald-600 hover:text-emerald-800"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Error state */}
       {error && (
@@ -362,6 +401,29 @@ export default function Inquiries() {
                 ✕
               </button>
             </div>
+
+            {/* Convert to Student — edit mode only */}
+            {panel === 'edit' && (
+              <div className="mx-6 mt-4">
+                {selected?.status === 'converted' || selected?.converted_student_id ? (
+                  <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+                    <span className="text-base">✓</span>
+                    <span className="font-medium">Converted to student</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleConvert}
+                    disabled={converting || saving}
+                    className="w-full rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-medium
+                               text-white hover:bg-emerald-700 disabled:opacity-50
+                               focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
+                  >
+                    {converting ? 'Converting…' : 'Convert to Student'}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Form error banner */}
             {formError && (
