@@ -85,7 +85,7 @@ edu-erp/
 │           ├── candidates.py          # CRUD — full enriched profile; auth fields omitted
 │           ├── student_progress.py    # GET/PUT/DELETE /students/{id}/steps/{step_id}/progress
 │           ├── candidate_progress.py  # GET/PUT/DELETE /candidates/{id}/steps/{step_id}/progress
-│           ├── inquiries.py           # CRUD + ?status= filter
+│           ├── inquiries.py           # CRUD + ?status= filter + POST /{id}/convert (→student) + POST /{id}/convert-candidate (→candidate)
 │           ├── applications.py        # CRUD + enriched list + PATCH for stage
 │           ├── job_applications.py    # CRUD + enriched list + PATCH for stage
 │           ├── referral_partners.py   # CRUD + ?type= & ?is_active= filters
@@ -100,7 +100,8 @@ edu-erp/
 │       ├── App.jsx                    # BrowserRouter + all routes, wrapped in <Layout>
 │       ├── index.css                  # Tailwind
 │       ├── lib/
-│       │   └── api.js                 # fetch wrapper; methods: get/post/patch/put/delete
+│       │   ├── api.js                 # fetch wrapper; methods: get/post/patch/put/delete
+│       │   └── search.js              # matchesQuery(record, query) — shared client-side forgiving search helper
 │       ├── components/
 │       │   ├── Layout.jsx                   # sidebar nav + header; groups: Dashboard / Education / Employment / Data / Operations / PARTNERS
 │       │   ├── EducationSelector.jsx        # reusable cascading education selector; saves target_* on student
@@ -118,25 +119,27 @@ edu-erp/
 │           ├── Employers.jsx                # WORKING (full CRUD, country + industry dropdowns)
 │           ├── Jobs.jsx                     # WORKING (full CRUD, qual-type requirement dropdowns)
 │           ├── DestinationExplorer.jsx      # WORKING (standalone read-only cascading selector, both tracks)
-│           ├── Students.jsx                 # WORKING (full enriched profile + EducationSelector + interactive AdmissionRoadmap + partner picker)
-│           ├── Candidates.jsx               # WORKING (full enriched profile + EmploymentSelector + interactive PlacementRoadmap + partner picker)
+│           ├── Students.jsx                 # WORKING (full enriched profile + EducationSelector + interactive AdmissionRoadmap + partner picker + search box)
+│           ├── Candidates.jsx               # WORKING (full enriched profile + EmploymentSelector + interactive PlacementRoadmap + partner picker + search box)
 │           ├── Applications.jsx             # WORKING (Kanban 8 cols = app_stage; drag-to-stage; create/edit drawer)
 │           ├── JobApplications.jsx          # WORKING (Kanban 7 cols = job_stage; drag-to-stage; create/edit drawer)
-│           ├── Inquiries.jsx                # WORKING (table + colored status badges; filter buttons; add/edit drawer incl. partner picker)
+│           ├── Inquiries.jsx                # WORKING (table + badges; filters; drawer with interest_track, conditional interest_level, partner picker; convert-to-student + convert-to-candidate with confirm + success/error banners; emerald indicator when already converted)
 │           ├── ReferralPartners.jsx         # WORKING (list + add/edit drawer; formatted commission; active/inactive badge; PARTNERS nav group)
 │           ├── ServiceFees.jsx              # WORKING (list table; direction & status badges; filters; add/edit drawer with conditional payer link)
 │           ├── Tasks.jsx                    # placeholder
 │           └── Accounting.jsx               # placeholder
 └── supabase/
     ├── config.toml
-    └── migrations/                    # ~25 timestamped .sql migrations (all pushed to cloud)
+    └── migrations/                    # ~27 timestamped .sql migrations (all pushed to cloud)
         ├── ...                        # (earlier migrations as before)
         ├── *_create_student_step_progress.sql   # per-student per-step progress tracking
         ├── *_create_placement_templates.sql     # placement_templates + placement_steps
         ├── *_create_candidate_step_progress.sql # per-candidate per-step progress tracking
         ├── *_create_referral_partners.sql       # referral_partners table
         ├── *_add_referred_by_partner.sql        # referred_by_partner_id FK on inquiries/students/candidates
-        └── *_create_service_fees.sql            # service_fees table (finance-RLS-gated)
+        ├── *_create_service_fees.sql            # service_fees table (finance-RLS-gated)
+        ├── *_add_converted_candidate_id.sql     # converted_candidate_id (uuid FK → candidates) on inquiries
+        └── *_add_interest_track.sql             # interest_track text CHECK ('education'|'employment') on inquiries
 ```
 
 ---
@@ -159,7 +162,7 @@ edu-erp/
 - **Candidates** CRUD — full enriched profile (passport, financial, work background, structured language/skills); same omission
 - **Student progress** — `GET /students/{id}/progress`; `PUT /students/{id}/steps/{step_id}/progress` (upsert); `DELETE` (reset to pending)
 - **Candidate progress** — `GET /candidates/{id}/progress`; `PUT /candidates/{id}/steps/{step_id}/progress` (upsert); `DELETE` (reset to pending)
-- **Inquiries** — CRUD; `GET` supports `?status=` filter; `assigned_to`/`created_by`/`converted_student_id` omitted until auth
+- **Inquiries** — CRUD; `GET` supports `?status=` filter; `POST /{id}/convert` creates a student, marks inquiry converted + sets `converted_student_id`; `POST /{id}/convert-candidate` creates a candidate, marks inquiry converted + sets `converted_candidate_id`; **convert-once guard** on both endpoints (HTTP 400 if already converted); `assigned_to`/`created_by` omitted until auth
 - **Applications** — CRUD; `GET` list enriches each row with `student_name`, `program_name`, `program_level`; `PATCH` for stage change on drag
 - **Job Applications** — CRUD; `GET` list enriches each row with `candidate_name`, `job_title`, `employer_name`; `PATCH` for stage change on drag
 - **Referral Partners** — CRUD; `GET` supports `?type=` & `?is_active=` filters
@@ -176,15 +179,17 @@ edu-erp/
 - **Employers** — full CRUD; country + industry field dropdowns
 - **Jobs** — full CRUD; employer dropdown + structured SSW language/skills requirement dropdowns
 - **Destination Explorer** — standalone read-only cascading selector for both tracks; Education/Employment toggle
-- **Students** — full enriched profile (passport, financial, supporter/sponsor, academic/career sections grouped in drawer) + embedded `EducationSelector` saving `target_*` + **interactive** `AdmissionRoadmap` (Pending/Current/Done per step, persisted to `student_step_progress`; read-only in ADD mode) + optional "Referred By (Partner)" dropdown (explicit-null pattern on clear)
-- **Candidates** — full enriched profile (passport, financial, work background, structured language/skills dropdowns from `qualification_types`) + embedded `EmploymentSelector` saving `target_*` + **interactive** `PlacementRoadmap` (Pending/Current/Done per step, persisted to `candidate_step_progress`; read-only in ADD mode) + optional "Referred By (Partner)" dropdown (explicit-null pattern on clear)
-- **Inquiries** — lead tracker table with colored status badges (new/contacted/qualified/converted/lost), status filter buttons, add/edit drawer (name, phone, email, source dropdown, interest_country_id, interest_level, status, follow_up_date, notes, partner picker); `assigned_to`/`created_by`/`converted_student_id` omitted until auth
+- **Students** — full enriched profile (passport, financial, supporter/sponsor, academic/career sections) + embedded `EducationSelector` saving `target_*` + **interactive** `AdmissionRoadmap` (Pending/Current/Done per step, persisted to `student_step_progress`; read-only in ADD mode) + optional "Referred By (Partner)" dropdown (explicit-null pattern on clear) + **search box** filtering loaded records via `matchesQuery` (name/email/phone/flexible DOB)
+- **Candidates** — full enriched profile (passport, financial, work background, structured language/skills dropdowns from `qualification_types`) + embedded `EmploymentSelector` saving `target_*` + **interactive** `PlacementRoadmap` (Pending/Current/Done per step, persisted to `candidate_step_progress`; read-only in ADD mode) + optional "Referred By (Partner)" dropdown (explicit-null pattern on clear) + **search box** filtering loaded records via `matchesQuery`
+- **Inquiries** — lead tracker table with colored status badges (new/contacted/qualified/converted/lost), status filter buttons, add/edit drawer with: name, phone, email, source dropdown, interest_country_id, **interest_track** (Education/Employment dropdown), **interest_level** (prog_level values, shown only when interest_track==='education'), status, follow_up_date, notes, partner picker; **"Convert to Student"** and **"Convert to Candidate"** buttons with `window.confirm`, "Converting…" state, green success banner (auto-dismiss 5s), red error banner; buttons hidden when already converted, replaced by **emerald indicator strip** ("✓ Converted to student" / "✓ Converted to candidate"); page-level error banner reserved for initial load only
 - **Applications** — Kanban board with 8 columns = `app_stage` values (inquiry → ... → enrolled); native HTML5 drag-and-drop (no new npm dep); drag-to-change-stage persists via `PATCH`; create/edit drawer with student + program pickers, stage, status, decision_notes; `application_checklist` deferred
 - **Job Applications** — Kanban board with 7 columns = `job_stage` values (applied → ... → placed); same drag-and-drop pattern; create/edit drawer with candidate + job pickers; `job_application_checklist` deferred
 - **Referral Partners** — list table + add/edit drawer; commission formatted (e.g. "15000 BDT (fixed)" / "10% (percentage)"); active/inactive badge; nav under **PARTNERS** group
 - **Service Fees** — list table showing Related To / Direction / Amount / Milestone / Status / Due Date; colored direction & status badges; status/direction filter buttons; add/edit drawer with payer_type selector (partner / student / other) and a **conditional link dropdown** that swaps by payer_type (partner→partner_id, student→student_id, other→candidate_id) and clears stale links on change using the explicit-null pattern; nav under **PARTNERS** group
 
 **Reusable components:** `EducationSelector.jsx`, `EmploymentSelector.jsx`, `AdmissionRoadmap.jsx`, `PlacementRoadmap.jsx`
+
+**Shared helper:** `lib/search.js` — `matchesQuery(record, query)` for client-side multi-field forgiving search (see Conventions).
 
 **Source control:** everything committed and pushed to GitHub.
 
@@ -209,7 +214,7 @@ edu-erp/
 - `program_sessions` (uuid PK) — intakes per program
 - `admission_requirements` (uuid PK) — requirement checklist per program
 - `students` (uuid PK) — full enriched profile: passport (number, issue_date, expiry, country), financial (annual_income float, income_currency, income_source), supporter/sponsor (name, relation, occupation, income float, currency), academic (highest_qualification, academic_summary, career_summary, purpose), target chain fields, **referred_by_partner_id (uuid nullable FK → referral_partners)**, status. Status: **active / archived / enrolled / dropped**. `assigned_counselor` + `created_by` — **deliberately omitted from API** until auth is wired.
-- `inquiries` (uuid PK) — lead tracker: new → contacted → qualified → converted/lost; **referred_by_partner_id (uuid nullable FK → referral_partners)**
+- `inquiries` (uuid PK) — lead tracker: new → contacted → qualified → converted/lost; **referred_by_partner_id (uuid nullable FK → referral_partners)**; **converted_student_id (uuid nullable FK → students)**; **converted_candidate_id (uuid nullable FK → candidates)**; **interest_track (text nullable CHECK IN ('education','employment'))** — which service track the lead is pursuing; **interest_level (text, prog_level values)** — education-track only. **Convert-once guard:** both `/convert` and `/convert-candidate` reject HTTP 400 if `status='converted'` OR `converted_student_id IS NOT NULL` OR `converted_candidate_id IS NOT NULL`.
 - `applications` + `application_checklist` (uuid PK) — 8-stage pipeline via `app_stage`
 - `journey_stages` (8 seeded rows) + `student_journey` — original roadmap tables (not currently in use; superseded by `student_step_progress`)
 - `admission_templates` (uuid PK) — **reusable per (country_id INT + level_category text), UNIQUE on pair**; name, description
@@ -287,11 +292,11 @@ git add . && git commit -m "..." && git push
 
 1. **Deferred checklists** (NEXT) — `application_checklist` (seed items from program `admission_requirements`, tick off per application) and `job_application_checklist`. Tables and DB structure already exist; no UI or endpoints yet.
 
-2. **Inquiry → Student/Candidate one-click conversion** — set status='converted', create the record, store `converted_student_id`. (Field exists on `inquiries`; deferred until auth wired for `created_by`.)
+2. **Tasks UI, Accounting UI (optionally wire `service_fees` into `transactions`), Dashboards.**
 
-3. **Tasks UI, Accounting UI (optionally wire `service_fees` into `transactions`), Dashboards.**
+3. **Authentication + RBAC enforcement** — backend still uses service key and bypasses RLS entirely; `profiles` table empty (that's why `assigned_to`/`created_by`/`assigned_counselor` are omitted everywhere). Note: `service_fees` and accounting tables already have finance-RLS policies — they enforce correctly once auth is wired. Wire Supabase Auth + JWT so RLS actually enforces per-user access. **Critical before any real staff log in.**
 
-4. **Authentication + RBAC enforcement** — backend still uses service key and bypasses RLS entirely; `profiles` table empty (that's why `assigned_to`/`created_by`/`assigned_counselor` are omitted everywhere). Note: `service_fees` and accounting tables already have finance-RLS policies — they enforce correctly once auth is wired. Wire Supabase Auth + JWT so RLS actually enforces per-user access. **Critical before any real staff log in.**
+4. **Backend search endpoints for Students/Candidates** — current client-side search (`lib/search.js`) is fine for hundreds of records. If data grows large, add `?q=` query params to the GET endpoints to push filtering to the DB.
 
 5. **Google Drive document integration** (service-account), then **Render deployment**.
 
@@ -320,6 +325,9 @@ git add . && git commit -m "..." && git push
 - **Both roadmap components are conditionally interactive.** `AdmissionRoadmap.jsx` renders Pending/Current/Done controls (hitting `student_progress.py`) when given a `studentId` prop; stays read-only without it (Destination Explorer, Students ADD mode). `PlacementRoadmap.jsx` renders interactive controls (hitting `candidate_progress.py`) when given a `candidateId` prop; stays read-only without it (Candidates ADD mode). Pattern is intentional — no ID exists in ADD mode.
 - **Explicit-null pattern for clearing optional FK fields.** When a user clears an optional FK (e.g. "Referred By Partner" → "none"), the frontend `buildPayload` must **always** send the field as either the UUID string or JSON `null` — never omit it, never send an empty string. The backend PATCH handler must detect a sent-but-null value via `model_dump(exclude_unset=True)` and apply `None` to clear the column. The default `model_dump(exclude_none=True)` silently drops the key and leaves the old value. Currently applied to `referred_by_partner_id` on inquiries/students/candidates and to payer link fields on service_fees.
 - **`service_fees` is finance-RLS-gated.** Uses `can_view_accounting()` for select/insert/update, matching the accounting tables. When auth is wired, only owner, manager, and accountant roles can see or edit fee records.
+- **Client-side search lives in `lib/search.js`.** The shared `matchesQuery(record, query)` helper handles forgiving multi-field search. Name/email: case-insensitive substring. Phone: digit-strip then substring. Date of birth: normalize to YYYYMMDD/DDMMYYYY/MMDDYYYY plus raw YYYY/MM/DD fragments; match if query digits are a substring of any form. Import this helper — do NOT inline it per page. If data grows large, add `?q=` server-side filtering and remove the client filter.
+- **Inquiry conversion is convert-once, one-destination.** Both `/convert` (→ student) and `/convert-candidate` (→ candidate) check: `status != 'converted'`, `converted_student_id IS NULL`, and `converted_candidate_id IS NULL`. If any fails: HTTP 400 "Inquiry already converted." An inquiry converts to a student OR a candidate — never both, never twice. The frontend hides the buttons and shows an emerald indicator strip when already converted.
+- **`interest_track` vs `interest_level` — do not conflate.** `interest_track` is a separate text column on `inquiries` ('education'|'employment'|null) — it marks which service track the lead is pursuing, deliberately NOT a `prog_level` enum value. `interest_level` uses `prog_level` values (bachelors/masters/phd/language) and is education-track only — meaningless for employment. In the UI, render `interest_level` conditionally (only when `interest_track === 'education'`) and clear it when switching to employment. Follow this conditional-render + clear-on-switch pattern for any future track-specific fields rather than polluting shared enums.
 
 ---
 
