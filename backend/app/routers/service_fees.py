@@ -4,7 +4,11 @@ from app.database import supabase
 from app.schemas import ServiceFeeCreate, ServiceFeeUpdate
 from app.auth import get_current_user, require_role
 
-router = APIRouter(prefix="/service-fees", tags=["service-fees"], dependencies=[Depends(get_current_user)])
+router = APIRouter(
+    prefix="/service-fees",
+    tags=["service-fees"],
+    dependencies=[Depends(require_role("owner", "manager", "accountant"))],
+)
 
 
 @router.get("")
