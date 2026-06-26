@@ -14,6 +14,20 @@ const EMPTY_CREATE = {
   team_leader_id: '',
 };
 
+const DEPT_OPTIONS = [
+  { value: 'marketing',            label: 'Marketing' },
+  { value: 'application',          label: 'Application' },
+  { value: 'admission',            label: 'Admission' },
+  { value: 'administration',       label: 'Administration' },
+  { value: 'hr',                   label: 'HR' },
+  { value: 'accounting',           label: 'Accounting' },
+  { value: 'job_placement',        label: 'Job Placement' },
+  { value: 'language_instruction', label: 'Language Instruction' },
+  { value: 'business_development', label: 'Business Development' },
+];
+
+const DEPT_LABEL = Object.fromEntries(DEPT_OPTIONS.map((d) => [d.value, d.label]));
+
 const ROLE_OPTIONS = [
   { value: 'owner',       label: 'Owner' },
   { value: 'manager',     label: 'Manager' },
@@ -117,6 +131,12 @@ export default function Staff() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  // id → staff record map (for Reports To role lookup)
+  const staffMap = useMemo(
+    () => Object.fromEntries(staff.map((s) => [s.id, s])),
+    [staff],
+  );
 
   // client-side search filter
   const filtered = useMemo(() => {
@@ -275,9 +295,18 @@ export default function Staff() {
                     <td className="px-5 py-3">
                       <RoleBadge role={member.role} />
                     </td>
-                    <td className="px-5 py-3 text-gray-600">{member.team ?? '—'}</td>
+                    <td className="px-5 py-3 text-gray-600">
+                      {member.team ? (DEPT_LABEL[member.team] ?? member.team) : '—'}
+                    </td>
                     <td className="px-5 py-3 text-gray-600">{member.position ?? '—'}</td>
-                    <td className="px-5 py-3 text-gray-600">{member.team_leader_name ?? '—'}</td>
+                    <td className="px-5 py-3 text-gray-600">
+                      {(() => {
+                        const leader = member.team_leader_id ? staffMap[member.team_leader_id] : null;
+                        if (leader) return `${leader.full_name} (${leader.role})`;
+                        if (member.team_leader_name) return member.team_leader_name;
+                        return '—';
+                      })()}
+                    </td>
                     <td className="px-5 py-3">
                       {member.is_active ? (
                         <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
@@ -399,14 +428,18 @@ export default function Staff() {
                   </Field>
 
                   <Field label="Team">
-                    <input
+                    <select
                       className={INPUT}
                       name="team"
                       value={form.team}
                       onChange={handleChange}
                       disabled={saving}
-                      placeholder="e.g. application"
-                    />
+                    >
+                      <option value="">— select department —</option>
+                      {DEPT_OPTIONS.map((d) => (
+                        <option key={d.value} value={d.value}>{d.label}</option>
+                      ))}
+                    </select>
                   </Field>
                 </div>
 
@@ -446,7 +479,7 @@ export default function Staff() {
                     {staff
                       .filter((s) => panel === 'add' || s.id !== selected?.id)
                       .map((s) => (
-                        <option key={s.id} value={s.id}>{s.full_name}</option>
+                        <option key={s.id} value={s.id}>{s.full_name} ({s.role})</option>
                       ))}
                   </select>
                 </Field>
