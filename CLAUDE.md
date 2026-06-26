@@ -93,7 +93,7 @@ Wait for `localhost:5173`. Leave running. Never run `uvicorn` here. Restart if `
 10. **Explicit-null pattern for clearing optional FK fields.** When a user clears an optional FK (e.g. "Referred By Partner" → none), the frontend `buildPayload` must send the field as UUID string or JSON `null` — never omit it, never send empty string. The backend PATCH handler must use `model_dump(exclude_unset=True)` (NOT `exclude_none=True`) so that an explicitly-sent `null` clears the column. Currently applied to `referred_by_partner_id` on inquiries/students/candidates and to payer link fields on service_fees.
 11. **`service_fees` is finance-RLS-gated.** Uses `can_view_accounting()` for select/insert/update, matching the accounting tables. Once auth is enforced on feature routers, only owner/manager/accountant can see or edit fee records.
 12. **RLS pattern for every table.** select/insert/update for `authenticated`; delete via `can_delete()` (owner + manager only). Accounting tables and `service_fees` restricted via `can_view_accounting()`. Activity log is immutable (insert + select only). Task management via `can_manage_tasks()`.
-13. **Roles vs job titles.** Permission tiers in `user_role` enum: owner > manager > team_leader > staff/accountant > student. Job titles in `profiles.position`; teams in `profiles.team`; reporting in `profiles.team_leader_id`. `team_leader` CANNOT delete.
+13. **Roles vs job titles — deliberately decoupled.** `user_role` enum = permission tier (owner > manager > team_leader > staff/accountant; `student` value exists but is not assigned to staff). Job titles live in `profiles.position` (free text, not the enum). Teams in `profiles.team`. Reporting in `profiles.team_leader_id`. Permission level is set by role, not job title. Finance access = owner + manager + accountant (can add team_leader later); higher tiers inherit lower abilities; owner can do anything. `team_leader` CANNOT delete. The Staff page enforces this: Role dropdown shows permission tiers with plain-English labels; Position dropdown shows job titles (Founder/MD, Operations Manager, etc.) with an "Other" free-text fallback.
 14. **Both roadmap components are conditionally interactive.** `AdmissionRoadmap.jsx` renders Pending/Current/Done controls when given a `studentId` prop; read-only without it (Destination Explorer, ADD mode). `PlacementRoadmap.jsx` same with `candidateId` prop. No ID exists in ADD mode — this is intentional.
 15. **Reusable process templates for both tracks.** Admission templates keyed by (country + study level); placement templates keyed by (country + industry_field). Both use free-text timeframes (never structured dates). Always follow the same DB + router + frontend pattern for both tracks.
 16. **Authentic data only.** Never auto-seed volatile data (tuition, real employer names, live jobs, rankings). Only stable reference data (country names, ISO codes, SSW fields) may be seeded.
@@ -106,42 +106,43 @@ Wait for `localhost:5173`. Leave running. Never run `uvicorn` here. Restart if `
 23. **Update both `CLAUDE.md` and `HANDOFF.md`** whenever a new concept, table, or component is added. These are the source of truth for future sessions.
 24. **Auth conventions for new backend endpoints.** Use `Depends(get_current_user)` to require a logged-in user on any endpoint. Use `Depends(require_role("owner", "manager"))` to gate by role. Both are importable from `app.auth`. The DB connection always uses the service-role key server-side (RLS bypassed). The Supabase admin API (for user creation) is used only in `admin_users.py`.
 25. **JWT verification uses JWKS/ES256, not the legacy HS256 secret.** Backend fetches public keys from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` via `PyJWKClient` at runtime. Do NOT use `SUPABASE_JWT_SECRET` for token verification — it is present in config but not used for this purpose. Audience must be `"authenticated"`.
+26. **Task assignment scope rule B.** Roles that may assign to others: `owner`, `manager`, `team_leader`. Scope: owner + manager → any active staff; `team_leader` → only staff whose `profile.team` matches the team_leader's own team (plus self). Everyone (incl. counselor/accountant/staff) can always self-assign (`assigned_to == current_user.id`). `GET /tasks/assignable-users` returns only users the caller may assign to, respecting this scope. PATCH/DELETE permission checks mirror assignment scope (assigner, owner, manager, or team_leader within same team can manage; assignee can update their own status).
+27. **`/api/tasks/*` is fully auth-gated — pattern for future routers.** All tasks endpoints require `Depends(get_current_user)`. Unlike other feature routers (which still accept unauthenticated requests), `tasks.py` was built auth-first. When auth-gating remaining routers, follow this pattern: every endpoint gets `Depends(get_current_user)`; deletes get `Depends(require_role("owner", "manager"))`.
 
 ---
 
 ## 6. What's Built (summary — see HANDOFF.md for full detail)
 
 **Backend routers (all working, all under `/api`):**
-`countries`, `institutes`, `programs` (+ sessions), `admission_templates` (+ steps), `placement_templates` (+ steps), `industries`, `employers`, `jobs` (+ qual-types), `students`, `candidates`, `student_progress`, `candidate_progress`, `inquiries` (+ convert + convert-candidate), `applications`, `job_applications`, `referral_partners`, `service_fees`, `selector_education`, `selector_employment`, `admin_users` (owner-only staff CRUD)
+`countries`, `institutes`, `programs` (+ sessions), `admission_templates` (+ steps), `placement_templates` (+ steps), `industries`, `employers`, `jobs` (+ qual-types), `students`, `candidates`, `student_progress`, `candidate_progress`, `inquiries` (+ convert + convert-candidate), `applications`, `job_applications`, `referral_partners`, `service_fees`, `selector_education`, `selector_employment`, `admin_users` (owner-only staff CRUD), **`tasks`** (auth-gated; POST/GET mine/GET assigned/PATCH/DELETE + assignable-users)
 
 **Auth endpoint:** `GET /api/me` — current user identity + profile.
 
 **Frontend pages (all working):**
-Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees, **Login**, **Staff** (owner-only).
-Tasks and Accounting are placeholders.
+Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees, **Login**, **Staff** (owner-only; role/position/team/Reports-To dropdowns), **MyTasks** (every user — tasks assigned to me, todo→in_progress→done, self-create personal tasks with optional student/candidate link), **ManageTasks** (owner/manager/team_leader — assign tasks, scope-enforced assignee dropdown, Related To student/candidate, edit/delete/status filters).
+Accounting is a placeholder. Tasks.jsx (old placeholder) replaced by MyTasks.jsx + ManageTasks.jsx.
 
-**Auth & session:** `lib/supabase.js` (Supabase JS client; localStorage persistence), `context/AuthContext.jsx` (useAuth — session + `/api/me` user profile), `App.jsx` gated (loading → Login → app). `Layout.jsx` shows ADMIN nav group (owner-only; Staff link) and a Logout button with user name/role. All `api.js` requests automatically attach the JWT Bearer token.
+**Auth & session:** `lib/supabase.js` (Supabase JS client; localStorage persistence), `context/AuthContext.jsx` (useAuth — session + `/api/me` user profile), `App.jsx` gated (loading → Login → app). `Layout.jsx` shows TASKS nav group (My Tasks for everyone; Assign/Manage Tasks for owner/manager/team_leader only) and ADMIN nav group (owner-only; Staff link), plus Logout button with user name/role. All `api.js` requests automatically attach the JWT Bearer token.
 
 **Reusable components:** `EducationSelector`, `EmploymentSelector`, `AdmissionRoadmap` (interactive with `studentId`; read-only without), `PlacementRoadmap` (interactive with `candidateId`; read-only without).
 
 **Shared helper:** `lib/search.js` — `matchesQuery(record, query)` used on Students and Candidates.
 
-**Data seeded:** 39 countries (Japan = id 1); 16 SSW industry fields; JLPT/JFT/SSW qual types; one real institute (Yamaguchi University); one admission template (Japan Master's Research); one placement template (Japan Nursing Care SSW, country 1 / industry 1); one referral partner (Sakura Japanese Language Center, fixed 15000 BDT). **Owner account:** `educonsultancy.admission@gmail.com` (role=`owner`; full_name currently the placeholder "Your Real Name" — needs update).
+**Data seeded:** 39 countries (Japan = id 1); 16 SSW industry fields; JLPT/JFT/SSW qual types; one real institute (Yamaguchi University); one admission template (Japan Master's Research); one placement template (Japan Nursing Care SSW, country 1 / industry 1); one referral partner (Sakura Japanese Language Center, fixed 15000 BDT). **Owner account:** `educonsultancy.admission@gmail.com` (role=`owner`; full_name = "Abdur Rahman").
 
-**Key milestones reached:** full CRUD all data pages; cascading selector both tracks; interactive roadmap progress tracking (students and candidates); Kanban pipelines (8-stage education, 7-stage employment); inquiry conversion (→student and →candidate, convert-once guard); referral partner + service fee tracking; forgiving client-side search; **authentication (JWKS/ES256, `get_current_user`, `require_role`); login + session persistence; owner-only staff management UI.**
+**Key milestones reached:** full CRUD all data pages; cascading selector both tracks; interactive roadmap progress tracking (students and candidates); Kanban pipelines (8-stage education, 7-stage employment); inquiry conversion (→student and →candidate, convert-once guard); referral partner + service fee tracking; forgiving client-side search; **authentication (JWKS/ES256, `get_current_user`, `require_role`); login + session persistence; owner-only staff management UI** (role/position/team dropdowns, Reports To chain); **assigned tasks phase 1** (My Tasks + Assign/Manage views, scope-enforced assignment per rule B, student/candidate linking, auth-gated tasks router).
 
 ---
 
 ## 7. Remaining Work (in order)
 
-1. **API-level role enforcement** (NEXT) — apply `require_role` / `get_current_user` dependencies to existing feature routers. Currently only `/api/me` and `/api/admin/*` are auth-gated; all other feature routers are open (the frontend sends the JWT but the backend ignores it on those routes). Pattern: all endpoints → `Depends(get_current_user)`; deletes → `Depends(require_role("owner", "manager"))`.
-2. **Wire `assigned_to` / `assigned_counselor` / `created_by`** back into feature routers now that real user profiles exist. Populate from `get_current_user().id` when creating or assigning records.
-3. **Task Management system** — fixed (daily, role+dept-based) + assigned tasks, verification step, upward hierarchical visibility (via `team_leader_id` chain; owner sees all), time/calendar-driven flagging of missed tasks, escalation notifications. Full design in HANDOFF.md §10A. Requires: `departments` table; `profiles.department_id`, `profiles.tier`, `profiles.reports_to` extensions.
+1. **Task Management — later phases** (NEXT) — assigned tasks (phase 1) is done. Remaining: fixed/daily task generation (lazy-on-login from `daily_task_templates`; needs `department_id` added to templates table and `profiles.department_id` + `profiles.tier` + `profiles.reports_to` extensions); verification step (staff explicitly confirm completion; unverified ≠ done); time/calendar flagging of missed tasks (auto-flag after `end_time` window); escalation notifications up the `reports_to` chain via `notifications` table. Full design in HANDOFF.md §10A.
+2. **API-level role enforcement on remaining feature routers** — apply `get_current_user` / `require_role` to students, candidates, inquiries, applications, etc. Currently only `/api/me`, `/api/admin/*`, and `/api/tasks/*` are auth-gated; other feature routers accept requests without checking the token. Pattern: all endpoints → `Depends(get_current_user)`; deletes → `Depends(require_role("owner", "manager"))`.
+3. **Wire `assigned_counselor` / `created_by`** into feature routers now that real user profiles exist. Populate from `get_current_user().id` when creating or assigning records.
 4. **Deferred checklists** — `application_checklist` and `job_application_checklist` tables exist in DB. Seed items from `admission_requirements` on application create; tick-off UI in Kanban drawers; mirror for job applications.
 5. **Accounting UI, Dashboards.**
-6. **Update owner profile full_name** from placeholder "Your Real Name" (`educonsultancy.admission@gmail.com` account, role=owner).
-7. **Backend search endpoints** — add `?q=` to students/candidates GET if data grows large.
-8. **Google Drive integration; Render deployment** — `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as server env vars; `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time vars.
+6. **Backend search endpoints** — add `?q=` to students/candidates GET if data grows large.
+7. **Google Drive integration; Render deployment** — `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as server env vars; `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time vars.
 
 ---
 
@@ -154,10 +155,17 @@ backend/app/
                      get_current_user_optional; require_role(*roles) factory
   config.py        — loads SUPABASE_* env vars (SUPABASE_JWT_SECRET present but unused for verification)
   schemas.py       — Pydantic models (float not Decimal; omit assigned_counselor/created_by);
-                     StaffCreate / StaffUpdate added
+                     StaffCreate / StaffUpdate / TaskCreate / TaskUpdate added
   database.py      — Supabase client (service-role key, bypasses RLS)
   routers/         — one file per resource (see §6 list above)
     admin_users.py — owner-only GET/POST/PATCH /admin/users; self-lockout guard on PATCH
+    tasks.py       — ALL endpoints auth-gated (Depends(get_current_user));
+                     POST /tasks (create/assign; assigned_by=current; validates assignee active);
+                     GET /tasks/mine?status= (tasks assigned to me; enriched names);
+                     GET /tasks/assigned?status= (tasks I can manage; enriched names);
+                     PATCH /tasks/{id} (status='done' sets completed_at; explicit-null for related_*);
+                     DELETE /tasks/{id};
+                     GET /tasks/assignable-users (scope-filtered per rule B)
 
 frontend/src/
   App.jsx                           — all routes; gated: loading screen → Login → app
@@ -167,17 +175,29 @@ frontend/src/
   context/AuthContext.jsx           — useAuth hook; tracks session via getSession + onAuthStateChange;
                                       loads /api/me as user; exposes user, loading, login(), logout()
   components/Layout.jsx             — sidebar nav: Dashboard/Education/Employment/Data/Operations/PARTNERS/
+                                      TASKS (My Tasks always visible; Assign/Manage only for owner/manager/team_leader)/
                                       ADMIN(owner-only); user name+role+Logout button in header
   components/AdmissionRoadmap.jsx   — interactive with studentId prop; read-only without
   components/PlacementRoadmap.jsx   — interactive with candidateId prop; read-only without
   components/EducationSelector.jsx  — cascading education selector (saves target_* on student)
   components/EmploymentSelector.jsx — cascading employment selector (saves target_* on candidate)
   pages/Login.jsx                   — email/password login page (shown when no session)
-  pages/Staff.jsx                   — owner-only staff management (list + add/edit/deactivate drawer)
+  pages/Staff.jsx                   — owner-only; role=permission-tier dropdown (no 'student');
+                                      position=job-title dropdown (7 preset titles + Other→free-text);
+                                      team=9-dept dropdown; Reports To shows "Full Name (role)";
+                                      list + add/edit/deactivate drawer
+  pages/MyTasks.jsx                 — every user; tasks assigned to me; todo→in_progress→done;
+                                      "+ New Personal Task" (self-assign; optional student/candidate link)
+  pages/ManageTasks.jsx             — owner/manager/team_leader only; table of manageable tasks;
+                                      "+ Assign Task" drawer (assignee from /tasks/assignable-users;
+                                      priority/due_date; Related To: None/Student/Candidate dropdown);
+                                      edit/reassign/delete; status filter tabs; /manage-tasks guarded
   pages/                            — one .jsx per page
 
-supabase/migrations/  — ~28 timestamped .sql files; push with `supabase db push`
-  (latest: *_fix_handle_new_user_search_path.sql — fixes SECURITY DEFINER trigger missing search_path)
+supabase/migrations/  — ~30 timestamped .sql files; push with `supabase db push`
+  *_add_task_related_links.sql      — adds related_student_id (uuid FK → students ON DELETE SET NULL)
+                                       and related_candidate_id (uuid FK → candidates ON DELETE SET NULL) to tasks
+  (previous: *_fix_handle_new_user_search_path.sql)
 ```
 
 ---
