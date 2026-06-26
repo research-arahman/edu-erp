@@ -4,14 +4,15 @@ import { api } from '../lib/api';
 // ── constants ─────────────────────────────────────────────────────────────────
 
 const EMPTY_CREATE = {
-  full_name:      '',
-  email:          '',
-  password:       '',
-  role:           'staff',
-  team:           '',
-  position:       '',
-  phone:          '',
-  team_leader_id: '',
+  full_name:       '',
+  email:           '',
+  password:        '',
+  role:            'staff',
+  team:            '',
+  positionSelect:  '',
+  positionCustom:  '',
+  phone:           '',
+  team_leader_id:  '',
 };
 
 const DEPT_OPTIONS = [
@@ -29,13 +30,28 @@ const DEPT_OPTIONS = [
 const DEPT_LABEL = Object.fromEntries(DEPT_OPTIONS.map((d) => [d.value, d.label]));
 
 const ROLE_OPTIONS = [
-  { value: 'owner',       label: 'Owner' },
-  { value: 'manager',     label: 'Manager' },
-  { value: 'team_leader', label: 'Team Leader' },
-  { value: 'counselor',   label: 'Counselor' },
-  { value: 'accountant',  label: 'Accountant' },
-  { value: 'staff',       label: 'Staff' },
+  { value: 'owner',       label: 'Owner',       dropdownLabel: 'Owner — full access' },
+  { value: 'manager',     label: 'Manager',     dropdownLabel: 'Manager' },
+  { value: 'team_leader', label: 'Team Leader', dropdownLabel: 'Team Leader' },
+  { value: 'counselor',   label: 'Counselor',   dropdownLabel: 'Counselor' },
+  { value: 'accountant',  label: 'Accountant',  dropdownLabel: 'Accountant' },
+  { value: 'staff',       label: 'Staff',       dropdownLabel: 'Staff' },
 ];
+
+const ROLE_LABEL = Object.fromEntries(ROLE_OPTIONS.map((r) => [r.value, r.label]));
+
+const POSITION_OPTIONS = [
+  'Founder / MD',
+  'Operations Manager',
+  'Admissions & Visa Lead',
+  'Senior Education Counselor',
+  'Education / Visa Counselor',
+  'Operations / Lead Coordinator',
+  'Administrative / Data Assistant',
+  'Other',
+];
+
+const KNOWN_POSITIONS = POSITION_OPTIONS.filter((p) => p !== 'Other');
 
 const ROLE_COLORS = {
   owner:       'bg-purple-100 text-purple-800',
@@ -79,6 +95,11 @@ function Field({ label, required, hint, children }) {
 
 // ── payload builders ──────────────────────────────────────────────────────────
 
+function resolvePosition(form) {
+  if (form.positionSelect === '__other__') return form.positionCustom.trim() || null;
+  return form.positionSelect || null;
+}
+
 function buildCreatePayload(form) {
   const p = {
     email:          form.email.trim(),
@@ -87,9 +108,9 @@ function buildCreatePayload(form) {
     role:           form.role || 'staff',
     team_leader_id: form.team_leader_id || null,
   };
-  if (form.team.trim())     p.team     = form.team.trim();
-  if (form.position.trim()) p.position = form.position.trim();
-  if (form.phone.trim())    p.phone    = form.phone.trim();
+  if (form.team.trim())         p.team     = form.team.trim();
+  if (resolvePosition(form))    p.position = resolvePosition(form);
+  if (form.phone.trim())        p.phone    = form.phone.trim();
   return p;
 }
 
@@ -97,10 +118,10 @@ function buildEditPayload(form) {
   return {
     full_name:      form.full_name.trim(),
     role:           form.role,
-    team:           form.team.trim()     || null,
-    position:       form.position.trim() || null,
-    phone:          form.phone.trim()    || null,
-    team_leader_id: form.team_leader_id  || null,
+    team:           form.team.trim()  || null,
+    position:       resolvePosition(form),
+    phone:          form.phone.trim() || null,
+    team_leader_id: form.team_leader_id || null,
     is_active:      form.is_active,
   };
 }
@@ -159,11 +180,17 @@ export default function Staff() {
   }
 
   function openEdit(member) {
+    const pos = member.position ?? '';
+    const positionSelect = pos === ''
+      ? ''
+      : KNOWN_POSITIONS.includes(pos) ? pos : '__other__';
+    const positionCustom = positionSelect === '__other__' ? pos : '';
     setForm({
       full_name:      member.full_name      ?? '',
       role:           member.role           ?? 'staff',
       team:           member.team           ?? '',
-      position:       member.position       ?? '',
+      positionSelect,
+      positionCustom,
       phone:          member.phone          ?? '',
       team_leader_id: member.team_leader_id ?? '',
       is_active:      member.is_active      ?? true,
@@ -302,7 +329,7 @@ export default function Staff() {
                     <td className="px-5 py-3 text-gray-600">
                       {(() => {
                         const leader = member.team_leader_id ? staffMap[member.team_leader_id] : null;
-                        if (leader) return `${leader.full_name} (${leader.role})`;
+                        if (leader) return `${leader.full_name} (${ROLE_LABEL[leader.role] ?? leader.role})`;
                         if (member.team_leader_name) return member.team_leader_name;
                         return '—';
                       })()}
@@ -413,7 +440,11 @@ export default function Staff() {
                 )}
 
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Role" required>
+                  <Field
+                    label="Role"
+                    required
+                    hint="Controls permissions. Owner and Manager can do everything lower roles can (including finance). Position is just the job title."
+                  >
                     <select
                       className={INPUT}
                       name="role"
@@ -422,7 +453,7 @@ export default function Staff() {
                       disabled={saving}
                     >
                       {ROLE_OPTIONS.map((r) => (
-                        <option key={r.value} value={r.value}>{r.label}</option>
+                        <option key={r.value} value={r.value}>{r.dropdownLabel}</option>
                       ))}
                     </select>
                   </Field>
@@ -444,15 +475,32 @@ export default function Staff() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Position">
-                    <input
+                  <Field
+                    label="Position"
+                    hint="Job title (display only, not permissions)."
+                  >
+                    <select
                       className={INPUT}
-                      name="position"
-                      value={form.position}
+                      name="positionSelect"
+                      value={form.positionSelect}
                       onChange={handleChange}
                       disabled={saving}
-                      placeholder="e.g. Senior Counselor"
-                    />
+                    >
+                      <option value="">— select position —</option>
+                      {POSITION_OPTIONS.map((p) => (
+                        <option key={p} value={p === 'Other' ? '__other__' : p}>{p}</option>
+                      ))}
+                    </select>
+                    {form.positionSelect === '__other__' && (
+                      <input
+                        className={`${INPUT} mt-1.5`}
+                        name="positionCustom"
+                        value={form.positionCustom}
+                        onChange={handleChange}
+                        disabled={saving}
+                        placeholder="Specify position…"
+                      />
+                    )}
                   </Field>
 
                   <Field label="Phone">
@@ -479,7 +527,9 @@ export default function Staff() {
                     {staff
                       .filter((s) => panel === 'add' || s.id !== selected?.id)
                       .map((s) => (
-                        <option key={s.id} value={s.id}>{s.full_name} ({s.role})</option>
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} ({ROLE_LABEL[s.role] ?? s.role})
+                        </option>
                       ))}
                   </select>
                 </Field>
