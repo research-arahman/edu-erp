@@ -1,6 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+const TASK_MANAGER_ROLES = ['owner', 'manager', 'team_leader'];
+
 const NAV = [
   {
     group: null,
@@ -47,7 +49,6 @@ const NAV = [
     group: 'Operations',
     items: [
       { to: '/inquiries', label: 'Inquiries' },
-      { to: '/tasks', label: 'Tasks' },
       { to: '/accounting', label: 'Accounting' },
     ],
   },
@@ -100,6 +101,27 @@ export default function Layout() {
               </ul>
             </div>
           ))}
+
+          {/* Tasks group — everyone sees My Tasks; managers see Assign/Manage too */}
+          <div>
+            <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Tasks
+            </p>
+            <ul className="space-y-0.5">
+              <li>
+                <NavLink to="/my-tasks" className={linkClass}>
+                  My Tasks
+                </NavLink>
+              </li>
+              {TASK_MANAGER_ROLES.includes(user?.role) && (
+                <li>
+                  <NavLink to="/manage-tasks" className={linkClass}>
+                    Assign / Manage Tasks
+                  </NavLink>
+                </li>
+              )}
+            </ul>
+          </div>
 
           {/* Admin group — owner only */}
           {user?.role === 'owner' && (

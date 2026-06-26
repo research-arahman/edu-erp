@@ -16,6 +16,8 @@ import Countries from './pages/Countries';
 import Industries from './pages/Industries';
 import Inquiries from './pages/Inquiries';
 import Tasks from './pages/Tasks';
+import MyTasks from './pages/MyTasks';
+import ManageTasks from './pages/ManageTasks';
 import Accounting from './pages/Accounting';
 import AdmissionTemplates from './pages/AdmissionTemplates';
 import PlacementTemplates from './pages/PlacementTemplates';
@@ -59,6 +61,15 @@ function AppRoutes() {
           <Route path="industries" element={<Industries />} />
           <Route path="inquiries" element={<Inquiries />} />
           <Route path="tasks" element={<Tasks />} />
+          <Route path="my-tasks" element={<MyTasks />} />
+          <Route
+            path="manage-tasks"
+            element={
+              ['owner', 'manager', 'team_leader'].includes(user?.role)
+                ? <ManageTasks />
+                : <Navigate to="/my-tasks" replace />
+            }
+          />
           <Route path="accounting" element={<Accounting />} />
           <Route path="referral-partners" element={<ReferralPartners />} />
           <Route path="service-fees" element={<ServiceFees />} />
