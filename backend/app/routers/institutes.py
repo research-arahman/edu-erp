@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from app.database import supabase
 from app.schemas import InstituteCreate, InstituteUpdate, InstituteType
+from app.auth import get_current_user, require_role
 
-router = APIRouter(prefix="/institutes", tags=["institutes"])
+router = APIRouter(prefix="/institutes", tags=["institutes"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("")
@@ -46,7 +47,7 @@ def update_institute(institute_id: str, body: InstituteUpdate):
     return result.data[0]
 
 
-@router.delete("/{institute_id}")
+@router.delete("/{institute_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_institute(institute_id: str):
     result = supabase.table("institutes").delete().eq("id", institute_id).execute()
     if not result.data:

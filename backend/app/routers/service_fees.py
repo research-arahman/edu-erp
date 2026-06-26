@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from app.database import supabase
 from app.schemas import ServiceFeeCreate, ServiceFeeUpdate
+from app.auth import get_current_user, require_role
 
-router = APIRouter(prefix="/service-fees", tags=["service-fees"])
+router = APIRouter(prefix="/service-fees", tags=["service-fees"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("")
@@ -85,7 +86,7 @@ def update_service_fee(fee_id: str, body: ServiceFeeUpdate):
     return result.data[0]
 
 
-@router.delete("/{fee_id}")
+@router.delete("/{fee_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_service_fee(fee_id: str):
     result = supabase.table("service_fees").delete().eq("id", fee_id).execute()
     if not result.data:

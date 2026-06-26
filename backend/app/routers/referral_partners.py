@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from app.database import supabase
 from app.schemas import ReferralPartnerCreate, ReferralPartnerUpdate
+from app.auth import get_current_user, require_role
 
-router = APIRouter(prefix="/referral-partners", tags=["referral-partners"])
+router = APIRouter(prefix="/referral-partners", tags=["referral-partners"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("")
@@ -46,7 +47,7 @@ def update_referral_partner(partner_id: str, body: ReferralPartnerUpdate):
     return result.data[0]
 
 
-@router.delete("/{partner_id}")
+@router.delete("/{partner_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_referral_partner(partner_id: str):
     result = supabase.table("referral_partners").delete().eq("id", partner_id).execute()
     if not result.data:

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from app.database import supabase
 from app.schemas import ProgramCreate, ProgramUpdate, ProgramSessionCreate
+from app.auth import get_current_user, require_role
 
-router = APIRouter(tags=["programs"])
+router = APIRouter(tags=["programs"], dependencies=[Depends(get_current_user)])
 
 
 # ── Programs ──────────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ def update_program(program_id: str, body: ProgramUpdate):
     return result.data[0]
 
 
-@router.delete("/programs/{program_id}")
+@router.delete("/programs/{program_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_program(program_id: str):
     result = supabase.table("programs").delete().eq("id", program_id).execute()
     if not result.data:
@@ -81,7 +82,7 @@ def create_session(program_id: str, body: ProgramSessionCreate):
     return result.data[0]
 
 
-@router.delete("/sessions/{session_id}")
+@router.delete("/sessions/{session_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_session(session_id: str):
     result = supabase.table("program_sessions").delete().eq("id", session_id).execute()
     if not result.data:

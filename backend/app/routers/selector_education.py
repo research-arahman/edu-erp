@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from app.database import supabase
+from app.auth import get_current_user
 
-router = APIRouter(prefix="/selector/education", tags=["selector-education"])
+router = APIRouter(prefix="/selector/education", tags=["selector-education"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/institute-types")

@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Optional
 from app.database import supabase
+from app.auth import get_current_user
 
-router = APIRouter(prefix="/selector/employment", tags=["selector-employment"])
+router = APIRouter(prefix="/selector/employment", tags=["selector-employment"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/industries")

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, timezone
 from app.database import supabase
 from app.schemas import StepProgressUpdate
+from app.auth import get_current_user, require_role
 
-router = APIRouter(tags=["student-progress"])
+router = APIRouter(tags=["student-progress"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/students/{student_id}/progress")
@@ -37,7 +38,7 @@ def upsert_step_progress(student_id: str, step_id: str, body: StepProgressUpdate
     return result.data[0]
 
 
-@router.delete("/students/{student_id}/steps/{step_id}/progress")
+@router.delete("/students/{student_id}/steps/{step_id}/progress", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_step_progress(student_id: str, step_id: str):
     result = (
         supabase.table("student_step_progress")

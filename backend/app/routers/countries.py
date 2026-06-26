@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.database import supabase
 from app.schemas import CountryCreate, CountryUpdate
+from app.auth import get_current_user, require_role
 
-router = APIRouter(prefix="/countries", tags=["countries"])
+router = APIRouter(prefix="/countries", tags=["countries"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("")
@@ -36,7 +37,7 @@ def update_country(country_id: int, body: CountryUpdate):
     return result.data[0]
 
 
-@router.delete("/{country_id}")
+@router.delete("/{country_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_country(country_id: int):
     result = supabase.table("countries").delete().eq("id", country_id).execute()
     if not result.data:

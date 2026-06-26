@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from app.database import supabase
 from app.schemas import ApplicationCreate, ApplicationUpdate
+from app.auth import get_current_user, require_role
 
-router = APIRouter(prefix="/applications", tags=["applications"])
+router = APIRouter(prefix="/applications", tags=["applications"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("")
@@ -74,7 +75,7 @@ def update_application(application_id: str, body: ApplicationUpdate):
     return result.data[0]
 
 
-@router.delete("/{application_id}")
+@router.delete("/{application_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_application(application_id: str):
     result = supabase.table("applications").delete().eq("id", application_id).execute()
     if not result.data:

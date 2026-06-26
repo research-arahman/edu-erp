@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from app.database import supabase
 from app.schemas import EmployerCreate, EmployerUpdate
+from app.auth import get_current_user, require_role
 
-router = APIRouter(prefix="/employers", tags=["employers"])
+router = APIRouter(prefix="/employers", tags=["employers"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("")
@@ -46,7 +47,7 @@ def update_employer(employer_id: str, body: EmployerUpdate):
     return result.data[0]
 
 
-@router.delete("/{employer_id}")
+@router.delete("/{employer_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_employer(employer_id: str):
     result = supabase.table("employers").delete().eq("id", employer_id).execute()
     if not result.data:

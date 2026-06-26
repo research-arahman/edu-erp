@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from app.database import supabase
 from app.schemas import (
@@ -7,8 +7,9 @@ from app.schemas import (
     PlacementStepCreate,
     PlacementStepUpdate,
 )
+from app.auth import get_current_user, require_role
 
-router = APIRouter(tags=["placement-templates"])
+router = APIRouter(tags=["placement-templates"], dependencies=[Depends(get_current_user)])
 
 
 # ── Placement Templates ───────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ def update_template(template_id: str, body: PlacementTemplateUpdate):
     return result.data[0]
 
 
-@router.delete("/placement-templates/{template_id}")
+@router.delete("/placement-templates/{template_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_template(template_id: str):
     result = supabase.table("placement_templates").delete().eq("id", template_id).execute()
     if not result.data:
@@ -94,7 +95,7 @@ def update_step(step_id: str, body: PlacementStepUpdate):
     return result.data[0]
 
 
-@router.delete("/placement-steps/{step_id}")
+@router.delete("/placement-steps/{step_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_step(step_id: str):
     result = supabase.table("placement_steps").delete().eq("id", step_id).execute()
     if not result.data:
