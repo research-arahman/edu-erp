@@ -5,7 +5,7 @@
 **Owner:** Mohd Abdur Rahman
 **GitHub:** `research-arahman/edu-erp` (branch `main`)
 **Local path:** `~/Library/Mobile Documents/com~apple~CloudDocs/vs_code_project/Virtual_Business/edu-erp`
-**Last updated:** End of session, June 25, 2026
+**Last updated:** End of session, June 26, 2026
 **Working style:** One small task at a time. Wait for "done" before moving on. SQL goes in the editor, never pasted into the terminal. Commit after each working chunk.
 
 ---
@@ -32,22 +32,30 @@ The system runs **two parallel service tracks** that share infrastructure (staff
 | Layer | Technology | Version / notes |
 |---|---|---|
 | Database + Auth | **Supabase** (Postgres + Row-Level Security + Storage) | CLI v2.106.0; project ref `fhzjizgsxlowjxzocasj`, region Oceania (Sydney) |
-| Backend | **FastAPI** (Python) | fastapi 0.137.1, uvicorn 0.49.0, supabase-py 2.31.0, pydantic 2.13.4, python-dotenv 1.2.2, google-api-python-client 2.197.0 |
+| Backend | **FastAPI** (Python) | fastapi 0.137.1, uvicorn 0.49.0, supabase-py 2.31.0, pydantic 2.13.4, python-dotenv 1.2.2, PyJWT[crypto] (ES256 JWT verification), google-api-python-client 2.197.0 |
 | Python | CPython | 3.11 (venv at `backend/venv`) |
-| Frontend | **React + Vite + Tailwind** | Vite 8.0.16, react-router-dom 7.18.0 |
+| Frontend | **React + Vite + Tailwind** | Vite 8.0.16, react-router-dom 7.18.0, @supabase/supabase-js |
 | Source control | **Git / GitHub** | repo `research-arahman/edu-erp` |
 | Agentic coding | **Claude Code (CLI)** | Sonnet model, used inside the repo for bulk code |
 | Hosting (planned) | **Render** | not yet deployed |
 | Documents (planned) | **Google Drive API** | service-account approach, not yet wired |
 | Dev OS | macOS (zsh, conda `base` active, Homebrew) | — |
 
-**Supabase keys** live in `backend/.env` (gitignored):
+**Backend env** (`backend/.env`, gitignored):
 ```
 SUPABASE_URL=https://fhzjizgsxlowjxzocasj.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=sb_secret_...   (rotated; backend only — bypasses RLS)
 SUPABASE_ANON_KEY=sb_publishable_...       (safe for frontend)
+SUPABASE_JWT_SECRET=...                    (present; NOT used for token verification — JWKS/ES256 used instead)
 ```
 Note: new Supabase key format — **publishable = anon**, **secret = service_role**. The secret was rotated after accidental exposure.
+
+**Frontend env** (`frontend/.env`, gitignored, new):
+```
+VITE_SUPABASE_URL=https://fhzjizgsxlowjxzocasj.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_...
+```
+These must also be set as build-time env vars on Render when deploying.
 
 ---
 
@@ -60,17 +68,21 @@ edu-erp/
 ├── README.md
 ├── .gitignore                         # ignores .env, venv/, node_modules/, service-account.json
 ├── backend/
-│   ├── .env                           # Supabase keys (gitignored)
-│   ├── requirements.txt
+│   ├── .env                           # Supabase keys + SUPABASE_JWT_SECRET (gitignored)
+│   ├── requirements.txt               # includes PyJWT[crypto] for ES256
 │   ├── venv/                          # Python 3.11 virtualenv (gitignored)
 │   ├── seeds/
 │   │   └── seed_countries.py          # idempotent country seeder (already run → 39 countries)
 │   └── app/
 │       ├── __init__.py
-│       ├── config.py                  # loads SUPABASE_* env vars
+│       ├── config.py                  # loads SUPABASE_* env vars (SUPABASE_JWT_SECRET present but unused for verification)
+│       ├── auth.py                    # JWKS/ES256 JWT verification; get_current_user dep (extracts sub, loads profile,
+│       │                              #   returns id+email+role+profile fields; role=None if no profile; 403 if is_active=False);
+│       │                              #   get_current_user_optional; require_role(*roles) dependency factory
 │       ├── database.py                # supabase client (service-role key — bypasses RLS)
 │       ├── main.py                    # FastAPI app; CORS; all routers mounted under /api prefix
-│       ├── schemas.py                 # Pydantic models — money fields = float, never Decimal
+│       ├── schemas.py                 # Pydantic models — money fields = float, never Decimal;
+│       │                              #   StaffCreate / StaffUpdate added for admin_users
 │       └── routers/
 │           ├── __init__.py
 │           ├── countries.py           # CRUD
@@ -91,24 +103,37 @@ edu-erp/
 │           ├── referral_partners.py   # CRUD + ?type= & ?is_active= filters
 │           ├── service_fees.py        # CRUD + multi-filter GET + enriched list (partner/student/candidate names)
 │           ├── selector_education.py  # read-only cascading selector endpoints (education chain)
-│           └── selector_employment.py # read-only cascading selector endpoints (employment chain)
+│           ├── selector_employment.py # read-only cascading selector endpoints (employment chain)
+│           └── admin_users.py         # owner-only: GET /admin/users (list+resolve team_leader_name);
+│                                      #   POST /admin/users (create Supabase auth user via admin API + PATCH profile);
+│                                      #   PATCH /admin/users/{id} (edit profile; self-lockout guard)
 ├── frontend/
+│   ├── .env                           # VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (gitignored)
 │   ├── vite.config.js                 # proxy: '/api' → http://127.0.0.1:8000 (single clean rule)
-│   ├── package.json
+│   ├── package.json                   # includes @supabase/supabase-js
 │   └── src/
 │       ├── main.jsx
-│       ├── App.jsx                    # BrowserRouter + all routes, wrapped in <Layout>
+│       ├── App.jsx                    # BrowserRouter + all routes; GATED: loading → Login → app (wrapped in AuthProvider)
 │       ├── index.css                  # Tailwind
 │       ├── lib/
-│       │   ├── api.js                 # fetch wrapper; methods: get/post/patch/put/delete
+│       │   ├── api.js                 # fetch wrapper; methods: get/post/patch/put/delete;
+│       │   │                          #   all methods attach Authorization: Bearer <access_token> automatically
+│       │   ├── supabase.js            # Supabase JS client; persists session in localStorage; auto-refreshes tokens
 │       │   └── search.js              # matchesQuery(record, query) — shared client-side forgiving search helper
+│       ├── context/
+│       │   └── AuthContext.jsx        # useAuth hook; tracks session via getSession + onAuthStateChange;
+│       │                              #   on session, calls GET /api/me to load profile as `user`;
+│       │                              #   exposes: user, loading, login(email,password), logout()
 │       ├── components/
-│       │   ├── Layout.jsx                   # sidebar nav + header; groups: Dashboard / Education / Employment / Data / Operations / PARTNERS
+│       │   ├── Layout.jsx                   # sidebar nav + header; groups: Dashboard / Education / Employment /
+│       │   │                                #   Data / Operations / PARTNERS / ADMIN (owner-only, shows Staff link);
+│       │   │                                #   header: logged-in user name+role + Logout button
 │       │   ├── EducationSelector.jsx        # reusable cascading education selector; saves target_* on student
 │       │   ├── EmploymentSelector.jsx       # reusable cascading employment selector; saves target_* on candidate
 │       │   ├── AdmissionRoadmap.jsx         # INTERACTIVE with studentId prop; read-only without
 │       │   └── PlacementRoadmap.jsx         # INTERACTIVE with candidateId prop; read-only without
 │       └── pages/
+│           ├── Login.jsx                    # WORKING — email/password login; shown when no session
 │           ├── Dashboard.jsx                # placeholder
 │           ├── Countries.jsx                # WORKING (list)
 │           ├── Institutes.jsx               # WORKING (full CRUD)
@@ -126,6 +151,7 @@ edu-erp/
 │           ├── Inquiries.jsx                # WORKING (table + badges; filters; drawer with interest_track, conditional interest_level, partner picker; convert-to-student + convert-to-candidate with confirm + banners; emerald indicator when already converted)
 │           ├── ReferralPartners.jsx         # WORKING (list + add/edit drawer; formatted commission; active/inactive badge; PARTNERS nav group)
 │           ├── ServiceFees.jsx              # WORKING (list table; direction & status badges; filters; add/edit drawer with conditional payer link)
+│           ├── Staff.jsx                    # WORKING — owner-only; list staff; add (email/password/full_name/role/team/position/phone/team_leader) + edit/deactivate drawer; ADMIN nav group
 │           ├── Tasks.jsx                    # placeholder
 │           └── Accounting.jsx               # placeholder
 └── supabase/
@@ -158,7 +184,8 @@ edu-erp/
         ├── *_add_referred_by_partner.sql        # referred_by_partner_id FK on inquiries/students/candidates
         ├── *_create_service_fees.sql            # service_fees table (finance-RLS-gated)
         ├── *_add_converted_candidate_id.sql     # converted_candidate_id (uuid FK → candidates) on inquiries
-        └── *_add_interest_track.sql             # interest_track text CHECK ('education'|'employment') on inquiries
+        ├── *_add_interest_track.sql             # interest_track text CHECK ('education'|'employment') on inquiries
+        └── *_fix_handle_new_user_search_path.sql # fixes SECURITY DEFINER trigger: SET search_path = public; schema-qualifies public.profiles
 ```
 
 ---
@@ -169,6 +196,7 @@ edu-erp/
 
 **Backend (FastAPI):** running locally, talks to Supabase. All endpoints under `/api`:
 - `GET /` and `GET /health`
+- `GET /api/me` — returns current user's identity + profile fields (requires valid JWT)
 - **Countries** CRUD
 - **Institutes** CRUD (+ filters)
 - **Programs** CRUD + program sessions sub-resource
@@ -181,30 +209,35 @@ edu-erp/
 - **Candidates** CRUD — full enriched profile (passport, financial, work background, structured language/skills); same omission
 - **Student progress** — `GET /students/{id}/progress`; `PUT /students/{id}/steps/{step_id}/progress` (upsert); `DELETE` (reset to pending)
 - **Candidate progress** — `GET /candidates/{id}/progress`; `PUT /candidates/{id}/steps/{step_id}/progress` (upsert); `DELETE` (reset to pending)
-- **Inquiries** — CRUD; `GET` supports `?status=` filter; `POST /{id}/convert` creates a student, marks inquiry converted + sets `converted_student_id`; `POST /{id}/convert-candidate` creates a candidate, marks inquiry converted + sets `converted_candidate_id`; **convert-once guard** on both endpoints (HTTP 400 if already converted); `assigned_to`/`created_by` omitted until auth
-- **Applications** — CRUD; `GET` list enriches each row with `student_name`, `program_name`, `program_level`; `PATCH` for stage change on drag
-- **Job Applications** — CRUD; `GET` list enriches each row with `candidate_name`, `job_title`, `employer_name`; `PATCH` for stage change on drag
+- **Inquiries** — CRUD; `GET` supports `?status=` filter; `POST /{id}/convert` creates a student; `POST /{id}/convert-candidate` creates a candidate; **convert-once guard** on both (HTTP 400 if already converted); `assigned_to`/`created_by` omitted until feature routers are auth-gated
+- **Applications** — CRUD; enriched list with student_name/program_name/program_level; `PATCH` for stage change on drag
+- **Job Applications** — CRUD; enriched list with candidate_name/job_title/employer_name; `PATCH` for stage change on drag
 - **Referral Partners** — CRUD; `GET` supports `?type=` & `?is_active=` filters
-- **Service Fees** — CRUD; `GET` supports `?status=&direction=&partner_id=&student_id=&candidate_id=` filters; list enriches rows with `partner_name` / `student_name` / `candidate_name`
+- **Service Fees** — CRUD; `GET` supports `?status=&direction=&partner_id=&student_id=&candidate_id=` filters; list enriches rows with partner/student/candidate names
+- **Admin Users** (owner-only, `require_role("owner")` on all endpoints):
+  - `GET /admin/users` — lists all profiles; resolves `team_leader_id` → `team_leader_name`
+  - `POST /admin/users` — creates a Supabase auth user via `supabase.auth.admin.create_user` (email_confirm=True, user_metadata.full_name), then PATCHes the profile with role/team/position/phone/team_leader_id; validates role is a staff role (not 'student')
+  - `PATCH /admin/users/{id}` — edits profile fields (NOT email/password); **self-lockout guard**: an owner cannot deactivate or demote their own account (HTTP 400)
+  - No hard delete — deactivate via `is_active=false`
 - **Cascading selector endpoints** — education + employment chains (read-only)
 
-**Frontend (React):** running locally at `localhost:5173`. Fully working pages:
-- **Countries** — lists all 39
-- **Institutes** — full CRUD
-- **Programs** — full CRUD + requirement dropdowns + sessions
-- **Admission Templates** — full CRUD + ordered steps with free-text timeframes
-- **Placement Templates** — full CRUD + ordered steps (mirrors Admission Templates; nav under Employment group)
-- **Industries** — full CRUD over `industry_fields`
-- **Employers** — full CRUD; country + industry field dropdowns
-- **Jobs** — full CRUD; employer dropdown + structured SSW language/skills requirement dropdowns
-- **Destination Explorer** — standalone read-only cascading selector for both tracks; Education/Employment toggle
-- **Students** — full enriched profile (passport, financial, supporter/sponsor, academic/career sections) + embedded `EducationSelector` saving `target_*` + **interactive** `AdmissionRoadmap` (Pending/Current/Done per step, persisted to `student_step_progress`; read-only in ADD mode) + optional "Referred By (Partner)" dropdown (explicit-null pattern on clear) + **search box** filtering loaded records via `matchesQuery`
-- **Candidates** — full enriched profile (passport, financial, work background, structured language/skills dropdowns from `qualification_types`) + embedded `EmploymentSelector` saving `target_*` + **interactive** `PlacementRoadmap` (Pending/Current/Done per step, persisted to `candidate_step_progress`; read-only in ADD mode) + optional "Referred By (Partner)" dropdown + **search box** filtering loaded records via `matchesQuery`
-- **Inquiries** — lead tracker table with colored status badges (new/contacted/qualified/converted/lost), status filter buttons, add/edit drawer with: name, phone, email, source dropdown, interest_country_id, **interest_track** (Education/Employment dropdown), **interest_level** (prog_level values, shown ONLY when interest_track==='education'), status, follow_up_date, notes, partner picker; **"Convert to Student"** and **"Convert to Candidate"** buttons with `window.confirm`, "Converting…" state, green success banner (auto-dismiss 5s), red error banner; buttons hidden when already converted, replaced by **emerald indicator strip** ("✓ Converted to student" / "✓ Converted to candidate"); page-level error banner reserved for initial load only
-- **Applications** — Kanban board with 8 columns = `app_stage` values; native HTML5 drag-and-drop (no new npm dep); drag-to-change-stage persists via `PATCH`; create/edit drawer with student + program pickers, stage, status, decision_notes; `application_checklist` deferred
-- **Job Applications** — Kanban board with 7 columns = `job_stage` values; same drag-and-drop pattern; create/edit drawer with candidate + job pickers; `job_application_checklist` deferred
-- **Referral Partners** — list table + add/edit drawer; commission formatted (e.g. "15000 BDT (fixed)" / "10% (percentage)"); active/inactive badge; nav under **PARTNERS** group
-- **Service Fees** — list table; colored direction & status badges; status/direction filter buttons; add/edit drawer with payer_type selector (partner / student / other) and a **conditional link dropdown** that swaps by payer_type and clears stale links using the explicit-null pattern; nav under **PARTNERS** group
+**Auth foundation:**
+- `backend/app/auth.py` — JWKS/ES256 JWT verification using `PyJWKClient` fetching from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`, `algorithms=["ES256"]`, `audience="authenticated"`. Provides: `get_current_user` FastAPI dependency (verifies token, extracts `sub`, loads profile row, returns id+email+role+profile fields; returns `role=None` if no profile row yet; raises 403 if `is_active=False`); `get_current_user_optional`; `require_role(*roles)` factory.
+- Supabase project configured: Email auth enabled, Confirm-email OFF, JWT signing uses new asymmetric ES256 keys (not legacy HS256 secret).
+- **Bug fixed:** `handle_new_user()` profile-creation trigger failed on signup ("relation profiles does not exist") because the `SECURITY DEFINER` function lacked a `search_path`. Fixed via migration `*_fix_handle_new_user_search_path.sql`: recreated with `SET search_path = public` and schema-qualified `public.profiles`. New users now auto-create their profile row on signup.
+- **Owner account created:** `educonsultancy.admission@gmail.com`, role=`owner`. full_name is currently the placeholder "Your Real Name" — update it.
+
+**Frontend (React):** running locally at `localhost:5173`. Auth gating: App.jsx shows a loading screen while resolving auth, then Login page if no session, then the full app.
+
+- **Login.jsx** — email/password login page using `useAuth().login()`
+- **lib/supabase.js** — Supabase JS client; persists session in localStorage; auto-refreshes tokens
+- **lib/api.js** — all five methods (get/post/patch/put/delete) now attach `Authorization: Bearer <access_token>` automatically (from `supabase.auth.getSession()`)
+- **context/AuthContext.jsx** — `useAuth()` hook; tracks session via `getSession` + `onAuthStateChange`; on session, calls `GET /api/me` to load the profile as `user`; exposes `user`, `loading`, `login(email,password)`, `logout()`
+- **Layout.jsx** — ADMIN sidebar group (owner-only, shows Staff link); header shows logged-in user name/role + Logout button
+- **Staff.jsx** — owner-only staff management; list table of profiles; add-staff drawer (email, password, full_name, role, team, position, phone, team_leader dropdown); edit drawer (all profile fields; deactivate toggle); /staff route is guarded (redirects non-owners)
+
+Fully working feature pages (unchanged): Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees.
+Placeholders: Tasks, Accounting, Dashboard.
 
 **Reusable components:** `EducationSelector.jsx`, `EmploymentSelector.jsx`, `AdmissionRoadmap.jsx`, `PlacementRoadmap.jsx`
 
@@ -232,17 +265,17 @@ edu-erp/
 - `programs` (uuid PK) — `institute_id` (uuid FK), level_category, level_label, department, course_name, fees, currency, duration_months; + requirement fields: `language_test_accepted` (text), `min_language_level` (text), `moi_accepted` (bool)
 - `program_sessions` (uuid PK) — session_name, start_date, application_deadline, seats, is_open (intakes per program)
 - `admission_requirements` (uuid PK) — per-program checklist template items
-- `students` (uuid PK) — full enriched profile: passport (number, issue_date, expiry, country), financial (annual_income float, income_currency, income_source), supporter/sponsor (name, relation, occupation, income float, currency), academic (highest_qualification, academic_summary, career_summary, purpose), target chain fields, **referred_by_partner_id (uuid nullable FK → referral_partners)**, status. Status: **active / archived / enrolled / dropped**. `assigned_counselor` + `created_by` FK to `auth.users` — **deliberately omitted from API** until auth is wired.
-- `inquiries` (uuid PK) — lead tracker: new → contacted → qualified → converted/lost; **referred_by_partner_id (uuid nullable FK → referral_partners)**; **converted_student_id (uuid nullable FK → students)**; **converted_candidate_id (uuid nullable FK → candidates)**; **interest_track (text nullable CHECK IN ('education','employment'))** — which service track the lead is pursuing; **interest_level (text, prog_level values)** — education-track only, not a DB enum constraint, treated as education-specific in UI. **Convert-once guard:** both `/convert` and `/convert-candidate` reject HTTP 400 if `status='converted'` OR `converted_student_id IS NOT NULL` OR `converted_candidate_id IS NOT NULL`.
+- `students` (uuid PK) — full enriched profile: passport (number, issue_date, expiry, country), financial (annual_income float, income_currency, income_source), supporter/sponsor (name, relation, occupation, income float, currency), academic (highest_qualification, academic_summary, career_summary, purpose), target chain fields, **referred_by_partner_id (uuid nullable FK → referral_partners)**, status. Status: **active / archived / enrolled / dropped**. `assigned_counselor` + `created_by` FK to `auth.users` — **deliberately omitted from API** until feature routers are auth-gated.
+- `inquiries` (uuid PK) — lead tracker: new → contacted → qualified → converted/lost; **referred_by_partner_id (uuid nullable FK → referral_partners)**; **converted_student_id (uuid nullable FK → students)**; **converted_candidate_id (uuid nullable FK → candidates)**; **interest_track (text nullable CHECK IN ('education','employment'))**; **interest_level (text, prog_level values)** — education-track only. **Convert-once guard:** both `/convert` and `/convert-candidate` reject HTTP 400 if `status='converted'` OR `converted_student_id IS NOT NULL` OR `converted_candidate_id IS NOT NULL`.
 - `applications` (uuid PK) + `application_checklist` (uuid PK) — 8-stage education pipeline via `app_stage`
 - `journey_stages` (8 seeded rows) + `student_journey` — original roadmap tables (not currently in use; superseded by `student_step_progress`)
 - `admission_templates` (uuid PK) — **reusable per (country_id INT + level_category text), UNIQUE on pair**; name, description
 - `admission_steps` (uuid PK) — ordered steps: step_order, title, description, **timeframe (FREE TEXT, never structured date)**
 - `student_step_progress` (uuid PK) — **per-student per-step progress state**. student_id (uuid FK → students), step_id (uuid FK → admission_steps), status ('pending'|'current'|'done', default 'pending'), note (text), updated_at, created_at. **UNIQUE(student_id, step_id).** Upserted on update; deleted on reset.
-- `candidate_step_progress` (uuid PK) — **per-candidate per-step progress state**. Mirrors `student_step_progress`: candidate_id (uuid FK → candidates ON DELETE CASCADE), step_id (uuid FK → placement_steps ON DELETE CASCADE), status ('pending'|'current'|'done', default 'pending'), note (text), updated_at, created_at. **UNIQUE(candidate_id, step_id).**
+- `candidate_step_progress` (uuid PK) — **per-candidate per-step progress state**. Mirrors `student_step_progress`: candidate_id (uuid FK → candidates ON DELETE CASCADE), step_id (uuid FK → placement_steps ON DELETE CASCADE), status, note, updated_at, created_at. **UNIQUE(candidate_id, step_id).**
 
 **Staff & access:**
-- `profiles` (uuid PK, references `auth.users`) — role (`user_role` enum), **position** (job title text), **team** (text), **team_leader_id** (self-ref uuid FK → profiles); auto-created via trigger on signup. Currently **EMPTY** (running solo via service key — no real users).
+- `profiles` (uuid PK, references `auth.users`) — `id` (uuid, FK auth.users), `full_name` (text), `email` (text), `role` (`user_role` enum), **`position`** (job title text), **`team`** (text), **`team_leader_id`** (self-ref uuid FK → profiles), **`phone`** (text), **`is_active`** (bool default true — used to deactivate leavers without deleting audit trail), created_at, updated_at. Auto-created via `handle_new_user()` trigger on signup (search_path bug fixed). **Currently has one real account:** `educonsultancy.admission@gmail.com` (role=`owner`; full_name is placeholder "Your Real Name" — needs update). `department_id`, `tier`, `reports_to` extensions are **not yet added** — needed for Task Management (see §10A).
 - `activity_log` — **immutable** audit trail (insert + select only, NO update/delete, not even for managers)
 
 **Employment / SSW track:**
@@ -250,7 +283,7 @@ edu-erp/
 - `qualification_types` (int PK) — **JLPT, JFT-Basic, SSW Skills Test seeded**; has `levels[]` array
 - `employers` (uuid PK) — company DB; country_id (int FK), industry_field_id (int FK), is_ssw_registered, housing_support, contact person/phone/email
 - `jobs` (uuid PK) — openings; structured requirements (req_language_qual_id int FK + req_language_level text, req_skills_qual_id int FK), salary_min/max float, currency, start_period text, positions_available int
-- `candidates` (uuid PK) — full enriched profile: passport, financial, work background (current_occupation, total_experience_years int, highest_qualification, work_history), structured language proficiency (language_qual_id int FK → qualification_types, language_level text), structured skills proficiency (skills_qual_id int FK, skills_detail text), target chain, **referred_by_partner_id (uuid nullable FK → referral_partners)**, status. Status: **active / archived / placed / dropped** (note: "placed" not "enrolled"). `assigned_counselor` + `created_by` — **deliberately omitted from API** until auth is wired.
+- `candidates` (uuid PK) — full enriched profile: passport, financial, work background (current_occupation, total_experience_years int, highest_qualification, work_history), structured language proficiency (language_qual_id int FK → qualification_types, language_level text), structured skills proficiency (skills_qual_id int FK, skills_detail text), target chain, **referred_by_partner_id (uuid nullable FK → referral_partners)**, status. Status: **active / archived / placed / dropped** (note: "placed" not "enrolled"). `assigned_counselor` + `created_by` — **deliberately omitted from API** until feature routers are auth-gated.
 - `job_applications` (uuid PK) + `job_application_checklist` (uuid PK) — employment pipeline via `job_stage`
 - `placement_templates` (uuid PK) — **reusable per (country_id INT + industry_field_id INT), UNIQUE on pair**; name, description, is_active. Parallel to `admission_templates`.
 - `placement_steps` (uuid PK) — ordered steps per placement template: step_order, title, description, **timeframe (FREE TEXT)**. template_id (uuid FK → placement_templates ON DELETE CASCADE).
@@ -277,8 +310,8 @@ edu-erp/
 - `can_view_accounting()` — `owner` + `manager` + `accountant` only
 - `can_manage_tasks()` — `owner` + `manager` + `team_leader`
 
-### Security note (deferred)
-Backend currently connects with the **service-role key**, which **bypasses RLS**. API does not yet enforce who can delete or view finance data — the DB rules exist but the backend acts as admin. Fine while solo. `service_fees` and accounting tables already have finance-RLS policies in place — they will enforce correctly once auth is wired. **JWT auth is a required step before real staff log in.**
+### Security note (current state)
+Backend connects with the **service-role key** for all DB operations, which **bypasses RLS**. Auth is now wired at the API layer: `GET /api/me` and all `/api/admin/*` endpoints enforce JWT verification and role checking via `get_current_user` / `require_role`. However, the **existing feature routers** (students, candidates, inquiries, applications, etc.) are **not yet auth-gated** — they accept the token from the frontend but do not verify it. Applying `get_current_user` / `require_role` to those routers is the immediate next step. The RLS policies in the DB remain as defense-in-depth once the backend stops using the service-role key for user-facing requests (a later step).
 
 ---
 
@@ -348,6 +381,16 @@ Keyed by **(country_id INT + industry_field_id INT)**, UNIQUE on the pair. Paral
   - **Conversion UI:** "Convert to Student" and "Convert to Candidate" buttons in the edit drawer, each with `window.confirm`, "Converting…" state, green success banner (auto-dismiss 5s + ✕), red error banner. Both buttons hidden when already converted; replaced by an emerald indicator strip. Optimistic local state update + refetch so the table badge flips.
   - **interest_track field:** migration adds `interest_track text CHECK ('education'|'employment')` to `inquiries`; added to schemas. "Interest Track" dropdown in form; `interest_level` shows only when `interest_track==='education'` and is cleared on switch to employment.
   - **Client-side search:** `frontend/src/lib/search.js` exporting `matchesQuery(record, query)`. Matches: full_name/email (case-insensitive substring); phone (digits-only substring); date_of_birth (normalizes to YYYYMMDD/DDMMYYYY/MMDDYYYY plus raw YYYY/MM/DD fragments). Search box added to Students.jsx and Candidates.jsx.
+- ✅ **C11 — Authentication + User Management:**
+  - **Auth foundation:** `backend/app/auth.py` with JWKS/ES256 JWT verification (`PyJWKClient`, `algorithms=["ES256"]`, `audience="authenticated"`); `get_current_user` dependency (verifies token, extracts `sub`, loads profile, returns id+email+role+profile fields; `role=None` if no profile yet; 403 if `is_active=False`); `get_current_user_optional`; `require_role(*roles)` factory. `GET /api/me` endpoint returns current user identity + profile.
+  - **Handle_new_user trigger bugfix:** `handle_new_user()` SECURITY DEFINER function was missing `SET search_path = public`, causing "relation profiles does not exist" on signup. Fixed via `*_fix_handle_new_user_search_path.sql` migration — recreated with correct search_path and schema-qualified `public.profiles`. New signups now auto-create their profile row.
+  - **Supabase config:** Email auth enabled; Confirm-email OFF; JWT signing uses new asymmetric ES256 keys (JWKS, not legacy HS256 secret). `SUPABASE_JWT_SECRET` added to `backend/.env` (present but not used for verification — JWKS is authoritative).
+  - **Frontend login + session:** `@supabase/supabase-js` installed. `lib/supabase.js` exports Supabase client (localStorage session, auto token refresh). `lib/api.js` all five methods now attach `Authorization: Bearer <access_token>` automatically. `context/AuthContext.jsx` tracks session via `getSession + onAuthStateChange`; on session calls `GET /api/me` to load profile as `user`; exposes `user`, `loading`, `login()`, `logout()`. `App.jsx` gated: loading screen → Login page → full app. `Layout.jsx` updated: ADMIN nav group (owner-only), user name/role + Logout button in header.
+  - **Admin Users router:** `backend/app/routers/admin_users.py` — all endpoints `require_role("owner")`. GET lists profiles + resolves team_leader names. POST creates auth user via `supabase.auth.admin.create_user` (email_confirm=True) + PATCHes profile. PATCH edits profile fields with self-lockout guard (owner cannot deactivate or demote themselves). No hard delete.
+  - **Staff.jsx:** owner-only staff management page. List table of all profiles. Add-staff drawer (email, password, full_name, role, team, position, phone, team_leader). Edit drawer (all profile fields + deactivate toggle). `/staff` route guarded to owner only.
+  - **StaffCreate / StaffUpdate** Pydantic schemas added to `schemas.py`.
+  - **Owner account created:** `educonsultancy.admission@gmail.com`, role=`owner`. full_name is currently placeholder "Your Real Name" — update it.
+  - `frontend/.env` created (gitignored) with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 
 ---
 
@@ -375,7 +418,7 @@ Wait for the `localhost:5173` line. Leave running. **Restart whenever `vite.conf
 cd ~/Library/Mobile\ Documents/com~apple~CloudDocs/vs_code_project/Virtual_Business/edu-erp
 ```
 
-**Health check:** `curl http://127.0.0.1:8000/api/countries` → 39 countries; `http://localhost:5173` → app loads.
+**Health check:** `curl http://127.0.0.1:8000/api/countries` → 39 countries; `http://localhost:5173` → login screen, then app.
 
 **Database migration workflow:**
 ```bash
@@ -389,35 +432,41 @@ git add supabase/migrations/ && git commit -m "..." && git push
 
 ## 10. Remaining Work (in order)
 
-1. **Deferred checklists** (NEXT) — `application_checklist` and `job_application_checklist` tables already exist in the database. Goals: (a) seed checklist items from the program's `admission_requirements` when a new application is created; (b) provide a UI to tick off items per application inside the Applications Kanban drawer; (c) mirror the same flow for `job_application_checklist` inside the Job Applications drawer.
+1. **API-level role enforcement** (NEXT) — apply `get_current_user` / `require_role` to existing feature routers. Currently only `/api/me` and `/api/admin/*` are auth-gated; all other feature routers (students, candidates, inquiries, applications, etc.) are open to any caller. Pattern: every endpoint gets `Depends(get_current_user)` to require login; delete endpoints get `Depends(require_role("owner", "manager"))`. Both are imported from `app.auth`.
 
-2. **Tasks UI, Accounting UI** (optionally wire `service_fees` into `transactions`); **Dashboards.**
+2. **Wire `assigned_to` / `assigned_counselor` / `created_by`** into feature routers and schemas now that real user profiles exist. When creating a student/candidate/inquiry/application: populate `created_by` from `get_current_user().id`. When assigning a counselor: populate `assigned_counselor` from the chosen user's ID. These FK columns already exist in the DB but are omitted from all schemas and forms.
 
-3. **Authentication + RBAC enforcement** — backend still uses service key and bypasses RLS entirely; `profiles` table empty (that's why `assigned_to`/`created_by`/`assigned_counselor` are omitted everywhere). Note: `service_fees` and accounting tables already have finance-RLS policies — they enforce correctly once auth is wired. Wire Supabase Auth + JWT so RLS actually enforces per-user access. **Critical before any real staff log in.**
+3. **Task Management system** — the big one. Full design in §10A. Requires:
+   - New `departments` table (the 9 departments)
+   - `profiles` extensions: `department_id` INT FK → departments, `tier` text ('manager'|'team_leader'|'team_member'), `reports_to` uuid nullable self-ref FK → profiles
+   - Then: fixed daily task generation, assigned task delegation, verification step, upward visibility (transitive `reports_to` chain), time-driven flagging, escalation notifications
 
-4. **Backend search endpoints for Students/Candidates** — current client-side search (`lib/search.js`) is fine for hundreds of records. If data grows large, add `?q=` query params to the GET endpoints to push filtering to the DB.
+4. **Deferred checklists** — `application_checklist` and `job_application_checklist` tables already exist in the database. Goals: (a) seed checklist items from the program's `admission_requirements` when a new application is created; (b) provide a UI to tick off items per application inside the Applications Kanban drawer; (c) mirror the same flow for `job_application_checklist` inside the Job Applications drawer.
 
-5. **Google Drive document integration** (service-account), then **Render deployment**.
+5. **Accounting UI, Dashboards.**
 
----
+6. **Update owner profile full_name** — the `educonsultancy.admission@gmail.com` account's `full_name` in the profiles table is currently the literal placeholder "Your Real Name". Update it to the real name via the Staff page or a direct DB update.
 
-## 10A. FUTURE FEATURE — Authentication + Role-Based Task Management
-*(Design requirements only — not yet built. Auth must come first.)*
+7. **Backend search endpoints for Students/Candidates** — current client-side search (`lib/search.js`) is fine for hundreds of records. If data grows large, add `?q=` query params to the GET endpoints to push filtering to the DB.
 
----
-
-### Prerequisites
-
-**Auth is a hard prerequisite for everything in this section.** The Task Management system, role-based visibility, and wiring back `assigned_to` / `assigned_by` / `assigned_counselor` / `created_by` across the app all depend on Authentication being built first. `profiles` and `auth.users` are currently empty; that is why those FK fields are omitted throughout the app today.
+8. **Google Drive document integration** (service-account), then **Render deployment**. Note: Render server needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as env vars; frontend build needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time env vars.
 
 ---
 
-### Planned Auth Approach
+## 10A. FEATURE REQUIREMENTS — Auth-Based Task Management
+*(Auth foundation is now built — C11 done. This section covers what still needs to be built on top of it.)*
 
-- **Provider:** Supabase Auth (populates `auth.users`, which existing tables already reference).
-- **Account creation:** Admin-created only — NOT self-signup. This is an internal tool; the owner creates staff logins and assigns department + tier.
-- **Login method:** Email + password to start; MFA / OAuth can be added later.
-- **Backend:** Replace the blanket service-role key (which bypasses RLS) with JWT verification for user-facing requests. The service-role key stays for trusted internal operations only.
+---
+
+### What Was Implemented (C11)
+
+The auth foundation is complete: Supabase ES256/JWKS JWT verification, `get_current_user` dependency, `require_role` factory, `GET /api/me`, frontend login + session persistence, and owner-only Staff management UI. The existing `profiles` table has `role`, `position`, `team`, `team_leader_id`, `phone`, and `is_active` — sufficient for auth and basic staff management.
+
+**Not yet built (needed for Task Management):**
+- `departments` table (the 9 departments listed below)
+- `profiles.department_id` INT FK → departments
+- `profiles.tier` text CHECK IN ('manager', 'team_leader', 'team_member') — for task routing
+- `profiles.reports_to` uuid nullable self-ref FK → profiles — drives upward visibility chain
 
 ---
 
@@ -439,13 +488,7 @@ git add supabase/migrations/ && git commit -m "..." && git push
 - `team_leader` — mid authority; supervises team members
 - `team_member` — standard staff
 
-**New table needed:** `departments` (id, name) — the 9 above.
-
-**`profiles` extensions required:**
-- `department_id` INT FK → `departments`
-- `tier` text CHECK IN ('manager', 'team_leader', 'team_member') — replaces the current looser `team` text field for authority purposes
-- `reports_to` uuid nullable self-ref FK → `profiles` — the direct supervisor; drives the delegation + upward-visibility chain
-- `is_active` bool default true — for deactivating leavers without deleting their audit trail
+**Note on existing `user_role` enum vs. `tier`:** `user_role` is the permission enum (owner > manager > counselor > team_leader > staff > accountant). `tier` (to be added to profiles) is the task-management authority level within a department. These are related but separate — a counselor may be a `team_leader` tier in their dept. When building, decide whether to reuse `user_role` or add `tier` as a separate column.
 
 ---
 
@@ -537,13 +580,15 @@ This template is to be filled in **with department leads when staff are onboarde
 
 ### Recommended Build Sequence (when resumed)
 
-1. **Supabase Auth + basic profiles row per user.** Login page in the frontend; backend verifies the JWT (instead of the service key) for user-facing requests. Owner creates accounts via the Supabase dashboard or a simple admin page.
+~~1. Supabase Auth + basic profiles row per user.~~ ✅ **Done (C11)**
 
-2. **`departments` table + `profiles` extensions** (`department_id`, `tier`, `reports_to`, `is_active`) + an admin **User Management page** (create staff, assign dept / tier / supervisor).
+~~2. Owner creates accounts via a simple admin page.~~ ✅ **Done (C11 — Staff.jsx)**
 
-3. **Enforce RLS properly** — stop using the service key for user requests; wire `assigned_to` / `assigned_counselor` / `created_by` back into Students, Candidates, Applications, Inquiries, and Activity Log everywhere they were deliberately omitted.
+3. **`departments` table + `profiles` extensions** (`department_id`, `tier`, `reports_to`) + update Staff page to assign department + tier. (`is_active` already exists.)
 
-4. **Task Management system** — in order:
+4. **Enforce auth on feature routers** — apply `get_current_user` / `require_role` to all existing routers; wire `assigned_to`/`assigned_counselor`/`created_by` back in. (Listed as items 1–2 in §10.)
+
+5. **Task Management system** — in order:
    a. `daily_task_templates` gets `department_id`; admin CRUD for templates
    b. Lazy-on-login fixed-task generation (today's instances)
    c. Assigned task delegation UI (downward assignment, personal to-dos)
@@ -562,8 +607,11 @@ This template is to be filled in **with department leads when staff are onboarde
 - **UUID vs INT — the recurring trap.** UUID PKs: institutes, programs, employers, candidates, students, jobs, admission_templates, admission_steps, placement_templates, placement_steps, referral_partners, service_fees, student_step_progress, candidate_step_progress. INT PKs: countries, industry_fields, qualification_types, accounts. FK types in routers/schemas must match. Always check before writing a new router.
 - **Money fields: `float`, NEVER `Decimal`.** Decimal is not JSON-serializable (caused an early crash).
 - **API under `/api` prefix.** All backend routes mounted under `/api`; Vite proxy has a single `/api` rule. React Router owns everything else.
-- **`api.js` has five HTTP methods:** `get`, `post`, `patch`, `put`, `delete`. The `put` method was missing until an earlier session — always use `api.put(...)` for upserts, never fall back to `api.post(...)`.
-- **RLS pattern:** select/insert/update for `authenticated`; delete via `can_delete()` only (owner + manager). Accounting and `service_fees` restricted via `can_view_accounting()`. Activity log immutable.
+- **`api.js` has five HTTP methods:** `get`, `post`, `patch`, `put`, `delete`. All now attach `Authorization: Bearer <access_token>` automatically. Always use `api.put(...)` for upserts, never fall back to `api.post(...)`.
+- **Auth conventions for new backend endpoints.** Use `Depends(get_current_user)` (any logged-in user) or `Depends(require_role("owner", "manager"))` (role-gated), both from `app.auth`. The DB connection always uses the service-role key. Admin API calls (user creation) happen only in `admin_users.py`.
+- **JWT verification uses JWKS/ES256.** Backend fetches public keys from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` at runtime. Do NOT use `SUPABASE_JWT_SECRET` for verification — it is present in config but not used. Audience = `"authenticated"`.
+- **`assigned_counselor` and `created_by` on students/candidates** FK to `auth.users`. Auth is wired; profiles has a real owner account. These fields remain **omitted from all feature router schemas and forms** until those routers are auth-gated. Populate from `get_current_user().id` when wiring.
+- **RLS pattern:** select/insert/update for `authenticated`; delete via `can_delete()` only (owner + manager). Accounting and `service_fees` restricted via `can_view_accounting()`. Activity log immutable. Backend bypasses RLS via service-role key; DB-level rules are defense-in-depth.
 - **Write significant actions to `activity_log`** (create/update/delete/stage_change/assign).
 - **Roles vs job titles:** `user_role` enum = permission tiers (owner > manager > team_leader > staff/accountant). Job titles live in `profiles.position`. `team_leader` CANNOT delete.
 - **Reusable process templates for both tracks.** Admission templates keyed by (country + study level); placement templates keyed by (country + industry_field). Both use free-text timeframes. Always follow the same DB + router + page pattern for both tracks.
@@ -571,27 +619,32 @@ This template is to be filled in **with department leads when staff are onboarde
 - **Keep two tracks parallel** (routers, schemas, pages) so education and employment don't tangle.
 - **Update `CLAUDE.md` and `HANDOFF.md`** whenever a new concept/table/component is added.
 - **Commit after each working milestone.** Secrets stay out of Git.
-- **`assigned_counselor` and `created_by` on students/candidates** FK to `auth.users` (which is empty — we run solo via service key). These are **deliberately omitted** from create/update schemas and forms. Do NOT send them. Wire when auth is added.
 - **Status values differ by track.** Students: `active / archived / enrolled / dropped`. Candidates: `active / archived / placed / dropped` (note: "placed" not "enrolled").
 - **Target chain field types.** Students: `target_country_id` INT, `target_institute_id` / `target_program_id` / `target_session_id` UUID. Candidates: `target_country_id` INT, `target_industry_id` INT, `target_employer_id` / `target_job_id` UUID, `target_start_period` text. Mixing types silently fails.
 - **Selector re-fetch on edit.** On opening a student/candidate for edit, the selector must re-fetch and pre-select the deepest saved level. A session-restore bug was found and fixed in `EducationSelector.jsx`; `EmploymentSelector.jsx` was built correctly from the start.
-- **Both roadmap components are conditionally interactive.** `AdmissionRoadmap.jsx` renders Pending/Current/Done controls (hitting `student_progress.py`) when given a `studentId` prop; stays read-only without it (Destination Explorer, Students ADD mode). `PlacementRoadmap.jsx` same with `candidateId` prop. Pattern is intentional — no ID exists in ADD mode.
+- **Both roadmap components are conditionally interactive.** `AdmissionRoadmap.jsx` renders Pending/Current/Done controls (hitting `student_progress.py`) when given a `studentId` prop; stays read-only without it. `PlacementRoadmap.jsx` same with `candidateId` prop. Pattern is intentional — no ID exists in ADD mode.
 - **Explicit-null pattern for clearing optional FK fields.** When a user clears an optional FK (e.g. "Referred By Partner" → "none"), the frontend `buildPayload` must **always** send the field as either the UUID string or JSON `null` — never omit it, never send an empty string. The backend PATCH handler must detect a sent-but-null value via `model_dump(exclude_unset=True)` and apply `None` to clear the column. The default `model_dump(exclude_none=True)` silently drops the key and leaves the old value. Currently applied to `referred_by_partner_id` on inquiries/students/candidates and to payer link fields on service_fees.
-- **`service_fees` is finance-RLS-gated.** Uses `can_view_accounting()` for select/insert/update, matching the accounting tables. When auth is wired, only owner, manager, and accountant roles can see or edit fee records.
-- **Client-side search lives in `lib/search.js`.** The shared `matchesQuery(record, query)` helper handles forgiving multi-field search. Name/email: case-insensitive substring. Phone: digit-strip then substring. Date of birth: normalize to YYYYMMDD/DDMMYYYY/MMDDYYYY plus raw YYYY/MM/DD fragments; match if query digits are a substring of any form. Import this helper — do NOT inline it per page. If data grows large, add `?q=` server-side filtering and remove the client filter.
-- **Inquiry conversion is convert-once, one-destination.** Both `/convert` (→ student) and `/convert-candidate` (→ candidate) check: `status != 'converted'`, `converted_student_id IS NULL`, and `converted_candidate_id IS NULL`. If any fails: HTTP 400 "Inquiry already converted." An inquiry converts to a student OR a candidate — never both, never twice. The frontend hides the buttons and shows an emerald indicator strip when already converted.
-- **`interest_track` vs `interest_level` — do not conflate.** `interest_track` is a separate text column on `inquiries` ('education'|'employment'|null) — it marks which service track the lead is pursuing, deliberately NOT a `prog_level` enum value. `interest_level` uses `prog_level` values (bachelors/masters/phd/language) and is education-track only. In the UI, render `interest_level` conditionally (only when `interest_track === 'education'`) and clear it when switching to employment. Follow this conditional-render + clear-on-switch pattern for any future track-specific fields.
+- **`service_fees` is finance-RLS-gated.** Uses `can_view_accounting()` for select/insert/update, matching the accounting tables. When auth is enforced on feature routers, only owner, manager, and accountant roles can see or edit fee records.
+- **Client-side search lives in `lib/search.js`.** The shared `matchesQuery(record, query)` helper handles forgiving multi-field search. Name/email: case-insensitive substring. Phone: digit-strip then substring. Date of birth: normalize to YYYYMMDD/DDMMYYYY/MMDDYYYY plus raw YYYY/MM/DD fragments; match if query digits are a substring of any form. Import this helper — do NOT inline it per page.
+- **Inquiry conversion is convert-once, one-destination.** Both `/convert` (→ student) and `/convert-candidate` (→ candidate) check: `status != 'converted'`, `converted_student_id IS NULL`, and `converted_candidate_id IS NULL`. If any fails: HTTP 400 "Inquiry already converted." An inquiry converts to a student OR a candidate — never both, never twice.
+- **`interest_track` vs `interest_level` — do not conflate.** `interest_track` is a separate text column on `inquiries` ('education'|'employment'|null) — which service track the lead is pursuing, deliberately NOT a `prog_level` enum value. `interest_level` uses `prog_level` values (bachelors/masters/phd/language) and is education-track only. Render `interest_level` conditionally (only when `interest_track === 'education'`) and clear it when switching to employment.
 
 ---
 
 ## 12. Immediate Next Step
 
-**Deferred checklists** — next build chunk.
+**API-level role enforcement** — apply `get_current_user` / `require_role` to existing feature routers.
 
-`application_checklist` and `job_application_checklist` tables already exist in the database. Goals: (a) seed checklist items from the program's `admission_requirements` when a new application is created; (b) provide a UI to tick off items per application inside the Applications Kanban drawer; (c) mirror the same flow for `job_application_checklist` inside the Job Applications drawer.
+Currently only `GET /api/me` and all `/api/admin/*` endpoints enforce JWT verification. Every other feature router (countries, institutes, programs, students, candidates, inquiries, applications, job_applications, etc.) accepts requests without checking the token — the frontend sends it, but the backend ignores it on those routes.
+
+**Pattern to apply:**
+1. Import `get_current_user` and `require_role` from `app.auth`
+2. Add `current_user: dict = Depends(get_current_user)` to each endpoint that should require login
+3. Add `Depends(require_role("owner", "manager"))` specifically to delete endpoints
+4. Once auth is enforced, wire `created_by` / `assigned_counselor` from `current_user["id"]` in create endpoints
 
 > **Before starting:** ensure all three terminals are running and `curl http://127.0.0.1:8000/api/countries` returns 39 rows.
 
 ---
 
-*Snapshot as of June 25, 2026. As building continues this will drift — regenerate at the next milestone. Keep CLAUDE.md in sync.*
+*Snapshot as of June 26, 2026. As building continues this will drift — regenerate at the next milestone. Keep CLAUDE.md in sync.*
