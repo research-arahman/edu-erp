@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.auth import get_current_user
 from app.database import supabase
 from app.routers import countries, institutes, programs, selector_education, selector_employment, admission_templates, placement_templates, employers, industries, qualification_types, jobs, students, candidates, student_progress, candidate_progress, inquiries, applications, job_applications, referral_partners, service_fees
 
@@ -44,3 +45,9 @@ def root():
 def health():
     result = supabase.table("countries").select("id", count="exact").execute()
     return {"status": "ok", "countries_count": result.count}
+
+
+@app.get("/api/me")
+async def me(user: dict = Depends(get_current_user)):
+    """Returns the JWT identity + profile for the authenticated user. Test endpoint for auth wiring."""
+    return user
