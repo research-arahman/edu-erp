@@ -253,7 +253,7 @@ edu-erp/
 
 **Auth foundation:**
 - `backend/app/auth.py` — JWKS/ES256 JWT verification using `PyJWKClient` fetching from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`, `algorithms=["ES256"]`, `audience="authenticated"`. Provides: `get_current_user` FastAPI dependency (verifies token, extracts `sub`, loads profile row, returns id+email+role+profile fields; returns `role=None` if no profile row yet; raises 403 if `is_active=False`); `get_current_user_optional`; `require_role(*roles)` factory.
-- **Auth-gated routers:** `GET /api/me` (get_current_user), all `/api/admin/*` (require_role owner), and all `/api/tasks/*` (get_current_user on every endpoint). All other feature routers (students, candidates, inquiries, applications, etc.) still accept unauthenticated requests — gating them is next.
+- **Auth-gated routers (all feature routers — security enforcement complete):** Every router under `/api` now requires `Depends(get_current_user)` at the router level — anonymous requests return 401. DELETEs additionally require `require_role("owner","manager")`. `service_fees` is further restricted: all its endpoints require `require_role("owner","manager","accountant")` (finance gate); deletes still require owner/manager only. `/api/admin/*` requires `require_role("owner")`. Verified: anonymous GET /students → 401; owner → 200; owner DELETE → 200; anon DELETE → 401; counselor GET /service-fees → 403; owner GET /service-fees → 200.
 - Supabase project configured: Email auth enabled, Confirm-email OFF, JWT signing uses new asymmetric ES256 keys (not legacy HS256 secret).
 - **Bug fixed:** `handle_new_user()` profile-creation trigger failed on signup ("relation profiles does not exist") because the `SECURITY DEFINER` function lacked a `search_path`. Fixed via migration `*_fix_handle_new_user_search_path.sql`: recreated with `SET search_path = public` and schema-qualified `public.profiles`. New users now auto-create their profile row on signup.
 - **Owner account created:** `educonsultancy.admission@gmail.com`, role=`owner`. full_name is currently the placeholder "Your Real Name" — update it.
@@ -346,7 +346,7 @@ Placeholders: Accounting, Dashboard. (Tasks.jsx old placeholder removed; replace
 - `can_manage_tasks()` — `owner` + `manager` + `team_leader`
 
 ### Security note (current state)
-Backend connects with the **service-role key** for all DB operations, which **bypasses RLS**. Auth is now wired at the API layer: `GET /api/me`, all `/api/admin/*`, and all `/api/tasks/*` endpoints enforce JWT verification and role checking via `get_current_user` / `require_role`. However, the **remaining feature routers** (students, candidates, inquiries, applications, etc.) are **not yet auth-gated** — they accept the token from the frontend but do not verify it. Applying `get_current_user` / `require_role` to those routers is next after the task-management later phases. The RLS policies in the DB remain as defense-in-depth once the backend stops using the service-role key for user-facing requests (a later step).
+Backend connects with the **service-role key** for all DB operations, which bypasses RLS. Auth is enforced at the **API (Python) layer** — every feature router under `/api` now requires `Depends(get_current_user)` at the router level. Anonymous requests return 401 across the board. DELETEs require `require_role("owner","manager")`. `service_fees` goes further: all its endpoints require `require_role("owner","manager","accountant")`, with deletes still requiring owner/manager. `/api/admin/*` requires `require_role("owner")` only. **Per-row visibility** ("only my students") is still deferred — needs `assigned_counselor` wiring. RLS policies remain as defense-in-depth.
 
 ---
 
@@ -439,6 +439,10 @@ Keyed by **(country_id INT + industry_field_id INT)**, UNIQUE on the pair. Paral
   - **`MyTasks.jsx`** — every user: tasks assigned to me; todo→in_progress→done; "+ New Personal Task" with optional student/candidate link.
   - **`ManageTasks.jsx`** — owner/manager/team_leader: table of manageable tasks; "+ Assign Task" drawer (scope-filtered assignee, priority, due_date, Related To: None/Student/Candidate conditional dropdown); edit/delete/status-filter tabs. Route guarded.
   - **`Layout.jsx`** updated: TASKS nav group added (My Tasks always; Assign/Manage Tasks only for owner/manager/team_leader).
+- ✅ **C13 — Security: API-level role enforcement (all feature routers):**
+  - **Pass 1:** Added router-level `Depends(get_current_user)` to every remaining feature router: `countries`, `qualification_types`, `industries`, `institutes`, `programs`, `employers`, `jobs`, `selector_education`, `selector_employment`, `students`, `candidates`, `student_progress`, `candidate_progress`, `admission_templates`, `placement_templates`, `inquiries`, `applications`, `job_applications`, `referral_partners`, `service_fees`. DELETE endpoints across all these routers additionally require `require_role("owner","manager")`. Verified: anonymous GETs return 401; owner token returns 200; owner DELETE returns 200; anonymous DELETE returns 401.
+  - **Pass 2:** `service_fees.py` further restricted — all its endpoints require `require_role("owner","manager","accountant")` (finance gate); deletes still require owner/manager only. Verified with real negative test: counselor account → 403 on `/service-fees`, 200 on `/students`; owner → 200 on both.
+  - Security enforcement model is now complete at the API layer. The pattern for new routers: every endpoint → `Depends(get_current_user)`; deletes → `Depends(require_role("owner","manager"))`; finance endpoints → `require_role("owner","manager","accountant")`.
 
 ---
 
@@ -488,17 +492,15 @@ git add supabase/migrations/ && git commit -m "..." && git push
    - **Escalation notifications** — write to `notifications` table (recipient_id, type, related_task_id, is_read) escalating up `reports_to` chain: staff → team_leader → manager → owner.
    - Full design in §10A.
 
-2. **API-level role enforcement on remaining feature routers** — apply `get_current_user` / `require_role` to students, candidates, inquiries, applications, etc. Currently only `/api/me`, `/api/admin/*`, and `/api/tasks/*` are auth-gated; all other feature routers are open to any caller. Pattern: every endpoint → `Depends(get_current_user)`; deletes → `Depends(require_role("owner", "manager"))`. Both imported from `app.auth`.
+2. **Wire `assigned_counselor` / `created_by`** into feature routers and schemas. All feature routers are now auth-gated; `get_current_user()` is already available on every endpoint. When creating a student/candidate/inquiry/application: populate `created_by` from `get_current_user().id`. When assigning: populate `assigned_counselor` from chosen user's ID. FK columns already exist in DB but are omitted from all schemas and forms.
 
-3. **Wire `assigned_counselor` / `created_by`** into feature routers and schemas now that real user profiles exist. When creating a student/candidate/inquiry/application: populate `created_by` from `get_current_user().id`. When assigning: populate `assigned_counselor` from chosen user's ID. FK columns already exist in DB but are omitted from all schemas and forms.
+3. **Deferred checklists** — `application_checklist` and `job_application_checklist` tables already exist. Goals: (a) seed items from `admission_requirements` when a new application is created; (b) tick-off UI in Applications Kanban drawer; (c) mirror for job applications.
 
-4. **Deferred checklists** — `application_checklist` and `job_application_checklist` tables already exist. Goals: (a) seed items from `admission_requirements` when a new application is created; (b) tick-off UI in Applications Kanban drawer; (c) mirror for job applications.
+4. **Accounting UI, Dashboards** — see §13 for planned feature specs (PF-3: Accounting Core; PF-2: Service Fee paid→ledger posting).
 
-5. **Accounting UI, Dashboards.**
+5. **Backend search endpoints for Students/Candidates** — client-side search (`lib/search.js`) is fine for hundreds of records. If data grows large, add `?q=` to the GET endpoints.
 
-6. **Backend search endpoints for Students/Candidates** — client-side search (`lib/search.js`) is fine for hundreds of records. If data grows large, add `?q=` to the GET endpoints.
-
-7. **Google Drive document integration** (service-account), then **Render deployment**. Render server needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as env vars; frontend build needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time env vars.
+6. **Google Drive document integration** (service-account), then **Render deployment**. Render server needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as env vars; frontend build needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time env vars.
 
 ---
 
@@ -639,7 +641,7 @@ This template is to be filled in **with department leads when staff are onboarde
 
 3. **`departments` table + `profiles` extensions** (`department_id`, `tier`, `reports_to`) + update Staff page to assign department + tier. (`is_active` already exists.)
 
-4. **Enforce auth on remaining feature routers** — apply `get_current_user` / `require_role` to students, candidates, inquiries, applications, etc.; wire `assigned_to`/`assigned_counselor`/`created_by` back in. (Listed as items 2–3 in §10.)
+~~4. **Enforce auth on remaining feature routers**~~ ✅ **Done (C13 — both security passes completed).** Wire `assigned_counselor`/`created_by` back in when creating records — still deferred (item 2 in §10).
 
 5. **Task Management later phases** — in order:
    a. `daily_task_templates` gets `department_id`; admin CRUD for templates
@@ -687,7 +689,7 @@ This template is to be filled in **with department leads when staff are onboarde
 
 ## 12. Immediate Next Step
 
-**Task Management — later phases.** Assigned tasks (phase 1) is done (C12). Next is the fixed/daily task system, which requires schema extensions first.
+**Task Management — later phases.** Assigned tasks (phase 1, C12) and API security enforcement (C13) are both done. Next is the fixed/daily task system, which requires schema extensions first.
 
 **Step 1 — Schema extensions:**
 - Create `departments` table (9 rows; id int PK, name text, label text)
@@ -703,6 +705,70 @@ This template is to be filled in **with department leads when staff are onboarde
 **Step 3 — Verification, flagging, escalation** (see §10A for full spec).
 
 > **Before starting:** ensure all three terminals are running; `curl http://127.0.0.1:8000/api/tasks/mine` (with a valid JWT) returns a list.
+
+---
+
+---
+
+## 13. PLANNED FEATURES (not yet built)
+
+Requirements captured only — no code written. Do NOT implement unless explicitly requested.
+
+---
+
+### PF-1: Apply-Tab Restructure (Profile vs. Application separation)
+
+**Current state:** Student and Candidate profile drawers currently embed `EducationSelector` / `EmploymentSelector` (destination target chain) and `AdmissionRoadmap` / `PlacementRoadmap` (process progress) directly on the profile. `students`/`candidates` tables carry `target_*` fields; progress is tracked per student/candidate.
+
+**Planned change:** Student and Candidate profiles should hold **pure demographic data only**. Destination selection, roadmap, and application detail belong in **Applications / Job Applications**, not on the profile.
+
+**Requirements:**
+- Add an **"Apply"** action/button on a Student profile that creates an Application for that student.
+- Add an **"Apply"** action/button on a Candidate profile that creates a Job Application for that candidate.
+- Move `EducationSelector` + `AdmissionRoadmap` **out of the Student profile drawer** and **into the Application record** (Applications Kanban drawer or dedicated application detail view).
+- Move `EmploymentSelector` + `PlacementRoadmap` **out of the Candidate profile drawer** and **into the Job Application record**.
+- The Application record (not the Student) carries the target selection (`target_*` fields) and tracks process progress.
+- A student may have multiple applications (different destinations, different intakes); the application is the unit of work.
+
+**Implications:**
+- `target_*` fields may eventually move off `students`/`candidates` onto `applications`/`job_applications` — schema migration required.
+- `student_step_progress` and `candidate_step_progress` may need to be re-keyed to `application_id` / `job_application_id` rather than `student_id` / `candidate_id`.
+- Profile drawers become simpler (demographics only: name, DOB, passport, financial, academic background).
+- Applications gain a richer detail view (selector + roadmap embedded there).
+
+---
+
+### PF-2: Service Fee "Paid" → Profile Indicator + Accounting Integration
+
+**Trigger:** When a `service_fee` record's `status` transitions to `'paid'`.
+
+**Requirements:**
+
+**PF-2a — Profile indicator (independent):** Show a visible "paid" badge on the linked student's or candidate's profile card/drawer. Read-only display; no edit flow needed here.
+
+**PF-2b — Accounting ledger posting (depends on PF-3):** Automatically post the paid amount as a transaction in the `transactions` table when status becomes `'paid'`. Logic lives in the `service_fees` PATCH endpoint.
+- Direction: incoming (revenue) for standard service fees.
+- Map to an appropriate revenue account in the existing chart of accounts (codes 1000–6400).
+
+**Dependency:** PF-3 must be built before PF-2b can be implemented. PF-2a can be built independently.
+
+---
+
+### PF-3: Accounting Core
+
+**Purpose:** A working accounting ledger — tracking income and expenses. Replaces the current `Accounting.jsx` placeholder page.
+
+**Access:** Finance-gated — owner, manager, accountant only (same as `service_fees` and existing accounting tables).
+
+**Requirements:**
+- **Transactions list / ledger UI** — filterable by account code, date range, direction (incoming/outgoing), status.
+- **Chart of accounts** already seeded (codes 1000–6400: assets, liabilities, equity, revenue, COGS, opex) — use as-is; display in a sidebar or filter dropdown.
+- **Manual transaction entry** — debit/credit against a chart-of-accounts code; amount + currency; description; date; optional document reference.
+- **Income sources:** paid service fees (auto-posted via PF-2b); manual revenue entries.
+- **Expense sources:** marketing expenses, company expenses — manual entries.
+- **`transactions` table** already exists in DB (gateway-ready with nullable Stripe/PayPal fields) — use it.
+- **`investments` and `commissions` tables** also exist — surface when ready (can be phase 2 of this feature).
+- The Accounting nav link in `Layout.jsx` already exists — replace the placeholder page with the real implementation.
 
 ---
 
