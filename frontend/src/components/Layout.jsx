@@ -100,6 +100,22 @@ export default function Layout() {
               </ul>
             </div>
           ))}
+
+          {/* Admin group — owner only */}
+          {user?.role === 'owner' && (
+            <div>
+              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Admin
+              </p>
+              <ul className="space-y-0.5">
+                <li>
+                  <NavLink to="/staff" className={linkClass}>
+                    Staff
+                  </NavLink>
+                </li>
+              </ul>
+            </div>
+          )}
         </nav>
 
         {/* User footer */}

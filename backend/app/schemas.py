@@ -583,3 +583,26 @@ class JobApplicationUpdate(BaseModel):
     offer_received_at: Optional[str] = None
     placed_at: Optional[str] = None
     decision_notes: Optional[str] = None
+
+
+# ── Admin / Staff Users ───────────────────────────────────────────────────────
+
+class StaffCreate(BaseModel):
+    email: str
+    password: str
+    full_name: str
+    role: Optional[str] = "staff"
+    team: Optional[str] = None
+    position: Optional[str] = None
+    phone: Optional[str] = None
+    team_leader_id: Optional[str] = None
+
+
+class StaffUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    team: Optional[str] = None
+    position: Optional[str] = None
+    phone: Optional[str] = None
+    team_leader_id: Optional[str] = None
+    is_active: Optional[bool] = None

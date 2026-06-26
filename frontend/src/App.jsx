@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -22,6 +22,7 @@ import PlacementTemplates from './pages/PlacementTemplates';
 import DestinationExplorer from './pages/DestinationExplorer';
 import ReferralPartners from './pages/ReferralPartners';
 import ServiceFees from './pages/ServiceFees';
+import Staff from './pages/Staff';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -61,6 +62,10 @@ function AppRoutes() {
           <Route path="accounting" element={<Accounting />} />
           <Route path="referral-partners" element={<ReferralPartners />} />
           <Route path="service-fees" element={<ServiceFees />} />
+          <Route
+            path="staff"
+            element={user?.role === 'owner' ? <Staff /> : <Navigate to="/" replace />}
+          />
         </Route>
       </Routes>
     </BrowserRouter>
