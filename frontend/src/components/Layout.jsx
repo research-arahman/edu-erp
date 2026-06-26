@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const NAV = [
   {
@@ -62,6 +63,12 @@ function linkClass({ isActive }) {
 }
 
 export default function Layout() {
+  const { user, logout } = useAuth();
+
+  const roleLabel = user?.role
+    ? user.role.charAt(0).toUpperCase() + user.role.slice(1)
+    : '';
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* ── Sidebar ── */}
@@ -94,6 +101,22 @@ export default function Layout() {
             </div>
           ))}
         </nav>
+
+        {/* User footer */}
+        <div className="border-t border-slate-800 px-4 py-4">
+          <div className="mb-2">
+            <p className="truncate text-sm font-medium text-white">
+              {user?.full_name ?? user?.email ?? '—'}
+            </p>
+            <p className="text-xs text-slate-400">{roleLabel}</p>
+          </div>
+          <button
+            onClick={logout}
+            className="w-full rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
+          >
+            Sign out
+          </button>
+        </div>
       </aside>
 
       {/* ── Right column ── */}
@@ -103,7 +126,12 @@ export default function Layout() {
           <span className="text-sm font-semibold tracking-tight text-gray-900">
             Education ERP / CRM
           </span>
-          <span className="text-xs text-gray-400">Not signed in</span>
+          {user && (
+            <span className="text-xs text-gray-500">
+              {user.full_name ?? user.email}
+              {roleLabel ? ` · ${roleLabel}` : ''}
+            </span>
+          )}
         </header>
 
         {/* Page content */}

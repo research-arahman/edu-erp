@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
+import Login from './pages/Login';
 
 import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
@@ -21,7 +23,21 @@ import DestinationExplorer from './pages/DestinationExplorer';
 import ReferralPartners from './pages/ReferralPartners';
 import ServiceFees from './pages/ServiceFees';
 
-export default function App() {
+function AppRoutes() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <span className="text-sm text-gray-500">Loading…</span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
   return (
     <BrowserRouter>
       <Routes>
@@ -48,5 +64,13 @@ export default function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 }
