@@ -70,7 +70,14 @@ function AppRoutes() {
                 : <Navigate to="/my-tasks" replace />
             }
           />
-          <Route path="accounting" element={<Accounting />} />
+          <Route
+            path="accounting"
+            element={
+              ['owner', 'manager', 'accountant'].includes(user?.role)
+                ? <Accounting />
+                : <Navigate to="/" replace />
+            }
+          />
           <Route path="referral-partners" element={<ReferralPartners />} />
           <Route path="service-fees" element={<ServiceFees />} />
           <Route

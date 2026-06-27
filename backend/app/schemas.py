@@ -606,3 +606,29 @@ class StaffUpdate(BaseModel):
     phone: Optional[str] = None
     team_leader_id: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+# ── Accounting ────────────────────────────────────────────────────────────────
+
+class TransactionCreate(BaseModel):
+    txn_date: Optional[str] = None
+    account_code: int
+    amount: float
+    currency: Optional[str] = "BDT"
+    description: Optional[str] = None
+    reference: Optional[str] = None
+    payment_method: Optional[str] = None
+    student_id: Optional[str] = None
+    is_reversal: Optional[bool] = False
+
+
+class TransactionUpdate(BaseModel):
+    txn_date: Optional[str] = None
+    account_code: Optional[int] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = None
+    description: Optional[str] = None
+    reference: Optional[str] = None
+    payment_method: Optional[str] = None
+    student_id: Optional[str] = None
+    is_reversal: Optional[bool] = None

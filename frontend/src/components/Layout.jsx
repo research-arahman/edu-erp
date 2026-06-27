@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 
 const TASK_MANAGER_ROLES = ['owner', 'manager', 'team_leader'];
 
+const FINANCE_ROLES = ['owner', 'manager', 'accountant'];
+
 const NAV = [
   {
     group: null,
@@ -49,7 +51,6 @@ const NAV = [
     group: 'Operations',
     items: [
       { to: '/inquiries', label: 'Inquiries' },
-      { to: '/accounting', label: 'Accounting' },
     ],
   },
 ];
@@ -122,6 +123,22 @@ export default function Layout() {
               )}
             </ul>
           </div>
+
+          {/* Finance group — owner / manager / accountant only */}
+          {FINANCE_ROLES.includes(user?.role) && (
+            <div>
+              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Finance
+              </p>
+              <ul className="space-y-0.5">
+                <li>
+                  <NavLink to="/accounting" className={linkClass}>
+                    Accounting
+                  </NavLink>
+                </li>
+              </ul>
+            </div>
+          )}
 
           {/* Admin group — owner only */}
           {user?.role === 'owner' && (
