@@ -170,6 +170,102 @@ def delete_course_student(student_id: str):
     return result.data[0]
 
 
+@router.post("/course-students/{student_id}/convert-to-student", status_code=201)
+def convert_course_student_to_student(student_id: str):
+    cs_result = supabase.table("course_students").select("*").eq("id", student_id).execute()
+    if not cs_result.data:
+        raise HTTPException(status_code=404, detail="Course student not found")
+    cs = cs_result.data[0]
+
+    if cs.get("converted_student_id"):
+        raise HTTPException(
+            status_code=400,
+            detail="This course student has already been converted to a student.",
+        )
+
+    student_payload: dict = {
+        "full_name": cs["full_name"],
+        "status": "active",
+    }
+    if cs.get("phone"):
+        student_payload["phone"] = cs["phone"]
+    if cs.get("email"):
+        student_payload["email"] = cs["email"]
+    if cs.get("date_of_birth"):
+        student_payload["date_of_birth"] = cs["date_of_birth"]
+    if cs.get("gender"):
+        student_payload["gender"] = cs["gender"]
+    if cs.get("address"):
+        student_payload["address"] = cs["address"]
+    if cs.get("referred_by_partner_id") is not None:
+        student_payload["referred_by_partner_id"] = cs["referred_by_partner_id"]
+
+    stu_result = supabase.table("students").insert(student_payload).execute()
+    if not stu_result.data:
+        raise HTTPException(status_code=500, detail="Failed to create student record.")
+    new_student = stu_result.data[0]
+    new_student_id = new_student["id"]
+
+    upd_result = supabase.table("course_students").update(
+        {"converted_student_id": new_student_id}
+    ).eq("id", student_id).execute()
+    if not upd_result.data:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Student created (id={new_student_id}) but course_student link update failed.",
+        )
+
+    return {"converted_student_id": new_student_id, "student": new_student}
+
+
+@router.post("/course-students/{student_id}/convert-to-candidate", status_code=201)
+def convert_course_student_to_candidate(student_id: str):
+    cs_result = supabase.table("course_students").select("*").eq("id", student_id).execute()
+    if not cs_result.data:
+        raise HTTPException(status_code=404, detail="Course student not found")
+    cs = cs_result.data[0]
+
+    if cs.get("converted_candidate_id"):
+        raise HTTPException(
+            status_code=400,
+            detail="This course student has already been converted to a candidate.",
+        )
+
+    candidate_payload: dict = {
+        "full_name": cs["full_name"],
+        "status": "active",
+    }
+    if cs.get("phone"):
+        candidate_payload["phone"] = cs["phone"]
+    if cs.get("email"):
+        candidate_payload["email"] = cs["email"]
+    if cs.get("date_of_birth"):
+        candidate_payload["date_of_birth"] = cs["date_of_birth"]
+    if cs.get("gender"):
+        candidate_payload["gender"] = cs["gender"]
+    if cs.get("address"):
+        candidate_payload["address"] = cs["address"]
+    if cs.get("referred_by_partner_id") is not None:
+        candidate_payload["referred_by_partner_id"] = cs["referred_by_partner_id"]
+
+    cand_result = supabase.table("candidates").insert(candidate_payload).execute()
+    if not cand_result.data:
+        raise HTTPException(status_code=500, detail="Failed to create candidate record.")
+    new_candidate = cand_result.data[0]
+    new_candidate_id = new_candidate["id"]
+
+    upd_result = supabase.table("course_students").update(
+        {"converted_candidate_id": new_candidate_id}
+    ).eq("id", student_id).execute()
+    if not upd_result.data:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Candidate created (id={new_candidate_id}) but course_student link update failed.",
+        )
+
+    return {"converted_candidate_id": new_candidate_id, "candidate": new_candidate}
+
+
 # ── ENROLLMENTS ───────────────────────────────────────────────────────────────
 
 def _enrich_enrollment(enr: dict) -> dict:

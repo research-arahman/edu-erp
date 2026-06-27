@@ -110,6 +110,9 @@ export default function CourseStudents() {
   const [paySubmitting,  setPaySubmitting]  = useState({});
   const [payErrors,      setPayErrors]      = useState({});
 
+  const [converting,     setConverting]     = useState(null); // null | 'student' | 'candidate'
+  const [convertError,   setConvertError]   = useState(null);
+
   // ── data loading ────────────────────────────────────────────────────────────
 
   function loadStudents() {
@@ -180,6 +183,7 @@ export default function CourseStudents() {
     setEditEnrForm({});
     setEditEnrError(null);
     resetPaymentState();
+    setConvertError(null);
     setPanel('edit');
   }
 
@@ -193,6 +197,7 @@ export default function CourseStudents() {
     setEditEnrForm({});
     setEditEnrError(null);
     resetPaymentState();
+    setConvertError(null);
   }
 
   // ── form handlers ────────────────────────────────────────────────────────────
@@ -330,6 +335,26 @@ export default function CourseStudents() {
       setStudents((prev) => prev.filter((s) => s.id !== student.id));
     } catch (err) {
       alert(`Delete failed: ${err.message}`);
+    }
+  }
+
+  async function handleConvert(track) {
+    const label = track === 'student' ? 'education Student' : 'SSW Candidate';
+    if (!window.confirm(
+      `Convert this course student to an ${label}? Their details will be copied; the course record stays linked.`
+    )) return;
+    setConverting(track);
+    setConvertError(null);
+    try {
+      const endpoint = track === 'student'
+        ? `/course-students/${selected.id}/convert-to-student`
+        : `/course-students/${selected.id}/convert-to-candidate`;
+      await api.post(endpoint, {});
+      await refetchSelected(selected.id);
+    } catch (err) {
+      setConvertError(err.message);
+    } finally {
+      setConverting(null);
     }
   }
 
@@ -1175,6 +1200,52 @@ export default function CourseStudents() {
                       {enrolling ? 'Enrolling…' : '+ Enrol'}
                     </button>
                   </form>
+                </div>
+              )}
+
+              {/* ── Convert to track (edit mode only) ────────────────────── */}
+              {panel === 'edit' && (
+                <div className="border-t border-gray-100 px-6 py-5">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Convert to Track
+                  </p>
+                  {convertError && (
+                    <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {convertError}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-3">
+                    {selected?.converted_student_id ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                        &#10003; Converted to Student
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleConvert('student')}
+                        disabled={converting !== null}
+                        className="rounded-md border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm
+                                   font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                      >
+                        {converting === 'student' ? 'Converting…' : 'Convert to Student'}
+                      </button>
+                    )}
+                    {selected?.converted_candidate_id ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                        &#10003; Converted to Candidate
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleConvert('candidate')}
+                        disabled={converting !== null}
+                        className="rounded-md border border-violet-300 bg-violet-50 px-4 py-2 text-sm
+                                   font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+                      >
+                        {converting === 'candidate' ? 'Converting…' : 'Convert to Candidate'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
