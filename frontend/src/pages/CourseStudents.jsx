@@ -24,6 +24,16 @@ const EMPTY_ENROLL = {
   enrollment_date: '',
 };
 
+function emptyPayForm() {
+  return {
+    amount:         '',
+    payment_date:   new Date().toISOString().split('T')[0],
+    payment_method: 'cash',
+    reference:      '',
+    notes:          '',
+  };
+}
+
 const STATUS_PALETTE = {
   active:    'bg-green-100 text-green-700',
   completed: 'bg-indigo-100 text-indigo-700',
@@ -92,6 +102,14 @@ export default function CourseStudents() {
   const [editEnrSaving, setEditEnrSaving] = useState(false);
   const [editEnrError,  setEditEnrError]  = useState(null);
 
+  // ── payments state (finance-gated) ──────────────────────────────────────────
+  // enrPayData[id] = { summary: null|{...}, payments: [], loading: bool, error: null }
+  const [expandedPayEnr, setExpandedPayEnr] = useState(new Set());
+  const [enrPayData,     setEnrPayData]     = useState({});
+  const [payForms,       setPayForms]       = useState({});
+  const [paySubmitting,  setPaySubmitting]  = useState({});
+  const [payErrors,      setPayErrors]      = useState({});
+
   // ── data loading ────────────────────────────────────────────────────────────
 
   function loadStudents() {
@@ -124,12 +142,21 @@ export default function CourseStudents() {
 
   // ── panel helpers ────────────────────────────────────────────────────────────
 
+  function resetPaymentState() {
+    setExpandedPayEnr(new Set());
+    setEnrPayData({});
+    setPayForms({});
+    setPaySubmitting({});
+    setPayErrors({});
+  }
+
   function openAdd() {
     setForm(EMPTY_FORM);
     setFormError(null);
     setSelected(null);
     setEnroll(EMPTY_ENROLL);
     setEnrollError(null);
+    resetPaymentState();
     setPanel('add');
   }
 
@@ -152,6 +179,7 @@ export default function CourseStudents() {
     setEditingEnrId(null);
     setEditEnrForm({});
     setEditEnrError(null);
+    resetPaymentState();
     setPanel('edit');
   }
 
@@ -164,6 +192,7 @@ export default function CourseStudents() {
     setEditingEnrId(null);
     setEditEnrForm({});
     setEditEnrError(null);
+    resetPaymentState();
   }
 
   // ── form handlers ────────────────────────────────────────────────────────────
@@ -299,6 +328,103 @@ export default function CourseStudents() {
     try {
       await api.delete(`/course-students/${student.id}`);
       setStudents((prev) => prev.filter((s) => s.id !== student.id));
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`);
+    }
+  }
+
+  // ── payment functions (finance-gated) ────────────────────────────────────────
+
+  async function fetchEnrPayments(enrollmentId) {
+    setEnrPayData((prev) => ({
+      ...prev,
+      [enrollmentId]: { ...prev[enrollmentId], loading: true, error: null },
+    }));
+    try {
+      const [summary, payments] = await Promise.all([
+        api.get(`/enrollments/${enrollmentId}/payment-summary`),
+        api.get(`/enrollments/${enrollmentId}/payments`),
+      ]);
+      setEnrPayData((prev) => ({
+        ...prev,
+        [enrollmentId]: { summary, payments, loading: false, error: null },
+      }));
+    } catch (err) {
+      // fail quietly for 403; show error otherwise
+      setEnrPayData((prev) => ({
+        ...prev,
+        [enrollmentId]: {
+          ...(prev[enrollmentId] ?? {}),
+          loading: false,
+          error: err.message?.includes('403') ? null : err.message,
+        },
+      }));
+    }
+  }
+
+  function togglePaymentPanel(enrollmentId) {
+    setExpandedPayEnr((prev) => {
+      const next = new Set(prev);
+      if (next.has(enrollmentId)) {
+        next.delete(enrollmentId);
+      } else {
+        next.add(enrollmentId);
+        // Initialise form if not already
+        setPayForms((pf) => ({
+          ...pf,
+          [enrollmentId]: pf[enrollmentId] ?? emptyPayForm(),
+        }));
+        fetchEnrPayments(enrollmentId);
+      }
+      return next;
+    });
+  }
+
+  function handlePayFormChange(enrollmentId, name, value) {
+    setPayForms((prev) => ({
+      ...prev,
+      [enrollmentId]: { ...prev[enrollmentId], [name]: value },
+    }));
+  }
+
+  async function handleAddPayment(e, enrollmentId) {
+    e.preventDefault();
+    const pf = payForms[enrollmentId] ?? emptyPayForm();
+    if (!pf.amount || Number(pf.amount) <= 0) {
+      setPayErrors((prev) => ({ ...prev, [enrollmentId]: 'Amount is required and must be > 0.' }));
+      return;
+    }
+    setPayErrors((prev) => ({ ...prev, [enrollmentId]: null }));
+    setPaySubmitting((prev) => ({ ...prev, [enrollmentId]: true }));
+    try {
+      const payload = { amount: Number(pf.amount) };
+      if (pf.payment_date)   payload.payment_date   = pf.payment_date;
+      if (pf.payment_method) payload.payment_method = pf.payment_method;
+      if (pf.reference.trim())   payload.reference  = pf.reference.trim();
+      if (pf.notes.trim())       payload.notes      = pf.notes.trim();
+      await api.post(`/enrollments/${enrollmentId}/payments`, payload);
+      // Reset form to fresh (keep method selection, reset amounts/refs)
+      setPayForms((prev) => ({ ...prev, [enrollmentId]: emptyPayForm() }));
+      // Refetch payments + summary for this enrollment + full student (for badge)
+      await Promise.all([
+        fetchEnrPayments(enrollmentId),
+        refetchSelected(selected.id),
+      ]);
+    } catch (err) {
+      setPayErrors((prev) => ({ ...prev, [enrollmentId]: err.message }));
+    } finally {
+      setPaySubmitting((prev) => ({ ...prev, [enrollmentId]: false }));
+    }
+  }
+
+  async function handleDeletePayment(paymentId, enrollmentId) {
+    if (!window.confirm('Delete this payment? It will be reversed from accounting.')) return;
+    try {
+      await api.delete(`/payments/${paymentId}`);
+      await Promise.all([
+        fetchEnrPayments(enrollmentId),
+        refetchSelected(selected.id),
+      ]);
     } catch (err) {
       alert(`Delete failed: ${err.message}`);
     }
@@ -627,175 +753,355 @@ export default function CourseStudents() {
                     <p className="mb-4 text-xs text-gray-400">No enrollments yet.</p>
                   ) : (
                     <div className="mb-5 divide-y divide-gray-100 rounded-md border border-gray-200">
-                      {(selected?.enrollments ?? []).map((enr) => (
-                        <div key={enr.id}>
-                          {/* Row */}
-                          <div className="flex items-center gap-2 px-3 py-2.5">
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-gray-800">
-                                {enr.course_name ?? '—'}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {fmt(enr.agreed_fee, enr.currency)}
-                              </p>
-                            </div>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                                ENROLL_STATUS_PALETTE[enr.status] ?? 'bg-gray-100 text-gray-600'
-                              }`}
-                            >
-                              {enr.status}
-                            </span>
-                            {/* Quick payment status (existing) */}
-                            <select
-                              value={enr.payment_status ?? 'pending'}
-                              onChange={(e) => handlePaymentStatus(enr.id, e.target.value)}
-                              disabled={enrolling || editEnrSaving}
-                              className={`rounded border px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none ${
-                                PAYMENT_PALETTE[enr.payment_status ?? 'pending'] ?? 'border-gray-300'
-                              } border-gray-300 disabled:opacity-50`}
-                              title="Payment status"
-                            >
-                              <option value="pending">Pending</option>
-                              <option value="partial">Partial</option>
-                              <option value="paid">Paid</option>
-                            </select>
-                            {/* Edit button — hidden while this row's edit form is open */}
-                            {editingEnrId !== enr.id && (
-                              <button
-                                onClick={() => startEditEnr(enr)}
-                                disabled={editEnrSaving}
-                                className="rounded px-2 py-1 text-xs font-medium text-indigo-600
-                                           hover:bg-indigo-50 disabled:opacity-40"
-                                title="Edit enrollment"
+                      {(selected?.enrollments ?? []).map((enr) => {
+                        const payExpanded = expandedPayEnr.has(enr.id);
+                        const pd = enrPayData[enr.id];
+                        const pf = payForms[enr.id] ?? emptyPayForm();
+                        const pSubmitting = paySubmitting[enr.id] ?? false;
+                        const pError = payErrors[enr.id] ?? null;
+
+                        return (
+                          <div key={enr.id}>
+                            {/* Row */}
+                            <div className="flex items-center gap-2 px-3 py-2.5">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-gray-800">
+                                  {enr.course_name ?? '—'}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {fmt(enr.agreed_fee, enr.currency)}
+                                </p>
+                              </div>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                  ENROLL_STATUS_PALETTE[enr.status] ?? 'bg-gray-100 text-gray-600'
+                                }`}
                               >
-                                Edit
-                              </button>
-                            )}
-                            {canDelete && (
-                              <button
-                                onClick={() => handleRemoveEnrollment(enr.id)}
+                                {enr.status}
+                              </span>
+                              {/* Quick payment status (existing) */}
+                              <select
+                                value={enr.payment_status ?? 'pending'}
+                                onChange={(e) => handlePaymentStatus(enr.id, e.target.value)}
                                 disabled={enrolling || editEnrSaving}
-                                className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-                                title="Remove enrollment"
+                                className={`rounded border px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none ${
+                                  PAYMENT_PALETTE[enr.payment_status ?? 'pending'] ?? 'border-gray-300'
+                                } border-gray-300 disabled:opacity-50`}
+                                title="Payment status"
                               >
-                                ✕
-                              </button>
+                                <option value="pending">Pending</option>
+                                <option value="partial">Partial</option>
+                                <option value="paid">Paid</option>
+                              </select>
+                              {/* Finance-only: toggle payments sub-panel */}
+                              {isFinance && (
+                                <button
+                                  onClick={() => togglePaymentPanel(enr.id)}
+                                  title={payExpanded ? 'Hide payments' : 'Show payments'}
+                                  className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                                    payExpanded
+                                      ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                      : 'text-emerald-600 hover:bg-emerald-50'
+                                  }`}
+                                >
+                                  ৳ Pay
+                                </button>
+                              )}
+                              {/* Edit button — hidden while this row's edit form is open */}
+                              {editingEnrId !== enr.id && (
+                                <button
+                                  onClick={() => startEditEnr(enr)}
+                                  disabled={editEnrSaving}
+                                  className="rounded px-2 py-1 text-xs font-medium text-indigo-600
+                                             hover:bg-indigo-50 disabled:opacity-40"
+                                  title="Edit enrollment"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button
+                                  onClick={() => handleRemoveEnrollment(enr.id)}
+                                  disabled={enrolling || editEnrSaving}
+                                  className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+                                  title="Remove enrollment"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Inline edit form */}
+                            {editingEnrId === enr.id && (
+                              <div className="border-t border-gray-100 bg-gray-50 px-3 py-3 space-y-2">
+                                {editEnrError && (
+                                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                    {editEnrError}
+                                  </div>
+                                )}
+                                <Field label="Course">
+                                  <select
+                                    className={INPUT}
+                                    name="course_id"
+                                    value={editEnrForm.course_id}
+                                    onChange={handleEditEnrChange}
+                                    disabled={editEnrSaving}
+                                  >
+                                    <option value="">— select a course —</option>
+                                    {courses.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.name} — {fmt(c.default_fee, c.currency)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </Field>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Field label="Agreed Fee (৳)">
+                                    <input
+                                      className={INPUT}
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      name="agreed_fee"
+                                      value={editEnrForm.agreed_fee}
+                                      onChange={handleEditEnrChange}
+                                      disabled={editEnrSaving}
+                                      placeholder="0"
+                                    />
+                                  </Field>
+                                  <Field label="Enrollment Date">
+                                    <input
+                                      className={INPUT}
+                                      type="date"
+                                      name="enrollment_date"
+                                      value={editEnrForm.enrollment_date}
+                                      onChange={handleEditEnrChange}
+                                      disabled={editEnrSaving}
+                                    />
+                                  </Field>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Field label="Status">
+                                    <select
+                                      className={INPUT}
+                                      name="status"
+                                      value={editEnrForm.status}
+                                      onChange={handleEditEnrChange}
+                                      disabled={editEnrSaving}
+                                    >
+                                      <option value="enrolled">Enrolled</option>
+                                      <option value="active">Active</option>
+                                      <option value="completed">Completed</option>
+                                      <option value="dropped">Dropped</option>
+                                    </select>
+                                  </Field>
+                                  <Field label="Payment Status">
+                                    <select
+                                      className={INPUT}
+                                      name="payment_status"
+                                      value={editEnrForm.payment_status}
+                                      onChange={handleEditEnrChange}
+                                      disabled={editEnrSaving}
+                                    >
+                                      <option value="pending">Pending</option>
+                                      <option value="partial">Partial</option>
+                                      <option value="paid">Paid</option>
+                                    </select>
+                                  </Field>
+                                </div>
+                                <Field label="Notes">
+                                  <textarea
+                                    className={INPUT}
+                                    name="notes"
+                                    value={editEnrForm.notes}
+                                    onChange={handleEditEnrChange}
+                                    disabled={editEnrSaving}
+                                    rows={2}
+                                    placeholder="Notes…"
+                                  />
+                                </Field>
+                                <div className="flex justify-end gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditEnr}
+                                    disabled={editEnrSaving}
+                                    className="rounded-md border border-gray-300 px-3 py-1.5 text-xs
+                                               font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveEnr(enr.id)}
+                                    disabled={editEnrSaving}
+                                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium
+                                               text-white hover:bg-indigo-700 disabled:opacity-50"
+                                  >
+                                    {editEnrSaving ? 'Saving…' : 'Save'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ── Payments sub-panel (finance only, toggle) ── */}
+                            {isFinance && payExpanded && (
+                              <div className="border-t border-emerald-100 bg-emerald-50/40 px-3 py-3 space-y-3">
+
+                                {/* Summary */}
+                                {pd?.loading && (
+                                  <p className="text-xs text-gray-400">Loading payments…</p>
+                                )}
+                                {pd?.error && (
+                                  <p className="text-xs text-red-500">{pd.error}</p>
+                                )}
+                                {pd?.summary && (
+                                  <div className="flex items-center gap-3 text-xs font-medium">
+                                    <span className="text-gray-500">
+                                      Full {fmt(pd.summary.full_amount, pd.summary.currency)}
+                                    </span>
+                                    <span className="text-emerald-700">
+                                      Paid {fmt(pd.summary.total_paid, pd.summary.currency)}
+                                    </span>
+                                    <span
+                                      className={
+                                        pd.summary.remaining > 0
+                                          ? 'text-amber-600'
+                                          : 'text-emerald-700'
+                                      }
+                                    >
+                                      Remaining {fmt(pd.summary.remaining, pd.summary.currency)}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Payment history */}
+                                {pd?.payments?.length > 0 && (
+                                  <div className="rounded border border-emerald-100 bg-white divide-y divide-gray-100">
+                                    {pd.payments.map((p) => (
+                                      <div key={p.id} className="flex items-center gap-2 px-3 py-2">
+                                        <div className="flex-1 min-w-0">
+                                          <span className="text-xs font-medium text-gray-800">
+                                            {fmt(p.amount, p.currency ?? 'BDT')}
+                                          </span>
+                                          <span className="ml-2 text-xs text-gray-500">
+                                            {p.payment_date ?? '—'}
+                                          </span>
+                                          {p.payment_method && (
+                                            <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 capitalize">
+                                              {p.payment_method.replace('_', ' ')}
+                                            </span>
+                                          )}
+                                          {p.reference && (
+                                            <span className="ml-2 text-xs text-gray-400 truncate">
+                                              {p.reference}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {canDelete && (
+                                          <button
+                                            onClick={() => handleDeletePayment(p.id, enr.id)}
+                                            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                                            title="Delete payment"
+                                          >
+                                            ✕
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {pd && !pd.loading && pd.payments?.length === 0 && (
+                                  <p className="text-xs text-gray-400">No payments recorded yet.</p>
+                                )}
+
+                                {/* Add payment form */}
+                                <form
+                                  onSubmit={(e) => handleAddPayment(e, enr.id)}
+                                  className="space-y-2 rounded border border-emerald-100 bg-white px-3 py-2.5"
+                                >
+                                  <p className="text-xs font-semibold text-gray-600">+ Add Payment</p>
+                                  {pError && (
+                                    <div className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
+                                      {pError}
+                                    </div>
+                                  )}
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <Field label="Amount (৳)" required>
+                                      <input
+                                        className={INPUT}
+                                        type="number"
+                                        min="0.01"
+                                        step="any"
+                                        value={pf.amount}
+                                        onChange={(e) => handlePayFormChange(enr.id, 'amount', e.target.value)}
+                                        disabled={pSubmitting}
+                                        placeholder="0"
+                                      />
+                                    </Field>
+                                    <Field label="Date">
+                                      <input
+                                        className={INPUT}
+                                        type="date"
+                                        value={pf.payment_date}
+                                        onChange={(e) => handlePayFormChange(enr.id, 'payment_date', e.target.value)}
+                                        disabled={pSubmitting}
+                                      />
+                                    </Field>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <Field label="Method">
+                                      <select
+                                        className={INPUT}
+                                        value={pf.payment_method}
+                                        onChange={(e) => handlePayFormChange(enr.id, 'payment_method', e.target.value)}
+                                        disabled={pSubmitting}
+                                      >
+                                        <option value="cash">Cash</option>
+                                        <option value="bank_transfer">Bank Transfer</option>
+                                        <option value="card">Card</option>
+                                        <option value="gateway">Gateway</option>
+                                      </select>
+                                    </Field>
+                                    <Field label="Reference">
+                                      <input
+                                        className={INPUT}
+                                        type="text"
+                                        value={pf.reference}
+                                        onChange={(e) => handlePayFormChange(enr.id, 'reference', e.target.value)}
+                                        disabled={pSubmitting}
+                                        placeholder="Txn / receipt no."
+                                      />
+                                    </Field>
+                                  </div>
+                                  <Field label="Notes">
+                                    <input
+                                      className={INPUT}
+                                      type="text"
+                                      value={pf.notes}
+                                      onChange={(e) => handlePayFormChange(enr.id, 'notes', e.target.value)}
+                                      disabled={pSubmitting}
+                                      placeholder="Optional note…"
+                                    />
+                                  </Field>
+                                  <div className="flex items-center justify-between pt-0.5">
+                                    <p className="text-xs text-gray-400">
+                                      Recording a payment posts it to Accounting (course revenue).
+                                    </p>
+                                    <button
+                                      type="submit"
+                                      disabled={pSubmitting}
+                                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium
+                                                 text-white hover:bg-emerald-700 disabled:opacity-50"
+                                    >
+                                      {pSubmitting ? 'Saving…' : 'Record'}
+                                    </button>
+                                  </div>
+                                </form>
+                              </div>
                             )}
                           </div>
-                          {/* Inline edit form */}
-                          {editingEnrId === enr.id && (
-                            <div className="border-t border-gray-100 bg-gray-50 px-3 py-3 space-y-2">
-                              {editEnrError && (
-                                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                                  {editEnrError}
-                                </div>
-                              )}
-                              <Field label="Course">
-                                <select
-                                  className={INPUT}
-                                  name="course_id"
-                                  value={editEnrForm.course_id}
-                                  onChange={handleEditEnrChange}
-                                  disabled={editEnrSaving}
-                                >
-                                  <option value="">— select a course —</option>
-                                  {courses.map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                      {c.name} — {fmt(c.default_fee, c.currency)}
-                                    </option>
-                                  ))}
-                                </select>
-                              </Field>
-                              <div className="grid grid-cols-2 gap-2">
-                                <Field label="Agreed Fee (৳)">
-                                  <input
-                                    className={INPUT}
-                                    type="number"
-                                    min="0"
-                                    step="any"
-                                    name="agreed_fee"
-                                    value={editEnrForm.agreed_fee}
-                                    onChange={handleEditEnrChange}
-                                    disabled={editEnrSaving}
-                                    placeholder="0"
-                                  />
-                                </Field>
-                                <Field label="Enrollment Date">
-                                  <input
-                                    className={INPUT}
-                                    type="date"
-                                    name="enrollment_date"
-                                    value={editEnrForm.enrollment_date}
-                                    onChange={handleEditEnrChange}
-                                    disabled={editEnrSaving}
-                                  />
-                                </Field>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <Field label="Status">
-                                  <select
-                                    className={INPUT}
-                                    name="status"
-                                    value={editEnrForm.status}
-                                    onChange={handleEditEnrChange}
-                                    disabled={editEnrSaving}
-                                  >
-                                    <option value="enrolled">Enrolled</option>
-                                    <option value="active">Active</option>
-                                    <option value="completed">Completed</option>
-                                    <option value="dropped">Dropped</option>
-                                  </select>
-                                </Field>
-                                <Field label="Payment Status">
-                                  <select
-                                    className={INPUT}
-                                    name="payment_status"
-                                    value={editEnrForm.payment_status}
-                                    onChange={handleEditEnrChange}
-                                    disabled={editEnrSaving}
-                                  >
-                                    <option value="pending">Pending</option>
-                                    <option value="partial">Partial</option>
-                                    <option value="paid">Paid</option>
-                                  </select>
-                                </Field>
-                              </div>
-                              <Field label="Notes">
-                                <textarea
-                                  className={INPUT}
-                                  name="notes"
-                                  value={editEnrForm.notes}
-                                  onChange={handleEditEnrChange}
-                                  disabled={editEnrSaving}
-                                  rows={2}
-                                  placeholder="Notes…"
-                                />
-                              </Field>
-                              <div className="flex justify-end gap-2 pt-1">
-                                <button
-                                  type="button"
-                                  onClick={cancelEditEnr}
-                                  disabled={editEnrSaving}
-                                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs
-                                             font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveEnr(enr.id)}
-                                  disabled={editEnrSaving}
-                                  className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium
-                                             text-white hover:bg-indigo-700 disabled:opacity-50"
-                                >
-                                  {editEnrSaving ? 'Saving…' : 'Save'}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
