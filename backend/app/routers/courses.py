@@ -153,6 +153,17 @@ def update_course_student(student_id: str, body: CourseStudentUpdate):
 
 @router.delete("/course-students/{student_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_course_student(student_id: str):
+    # Resolve all enrollments for this student so we can reverse their transactions
+    # before the cascade wipes course_payments without touching accounting.
+    enr_res = (
+        supabase.table("course_enrollments")
+        .select("id")
+        .eq("course_student_id", student_id)
+        .execute()
+    )
+    enrollment_ids = [e["id"] for e in (enr_res.data or [])]
+    _reverse_payments_for_enrollments(enrollment_ids)
+
     result = supabase.table("course_students").delete().eq("id", student_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Course student not found")
@@ -216,19 +227,8 @@ def update_enrollment(enrollment_id: str, body: EnrollmentUpdate):
 
 @router.delete("/enrollments/{enrollment_id}", dependencies=[Depends(require_role("owner", "manager"))])
 def delete_enrollment(enrollment_id: str):
-    # Clean up linked accounting transactions before the payment rows cascade-delete
-    try:
-        pmts_res = (
-            supabase.table("course_payments")
-            .select("posted_transaction_id")
-            .eq("enrollment_id", enrollment_id)
-            .execute()
-        )
-        for pmt in (pmts_res.data or []):
-            if pmt.get("posted_transaction_id"):
-                _delete_txn(pmt["posted_transaction_id"])
-    except Exception as exc:
-        logger.warning("Pre-delete txn cleanup failed for enrollment %s: %s", enrollment_id, exc)
+    # Reverse linked accounting transactions before payment rows cascade-delete.
+    _reverse_payments_for_enrollments([enrollment_id])
 
     result = supabase.table("course_enrollments").delete().eq("id", enrollment_id).execute()
     if not result.data:
@@ -287,6 +287,34 @@ def _delete_txn(txn_id: str) -> None:
         supabase.table("transactions").delete().eq("id", txn_id).execute()
     except Exception as exc:
         logger.warning("Failed to delete transaction %s: %s", txn_id, exc)
+
+
+def _reverse_payments_for_enrollments(enrollment_ids: list[str]) -> None:
+    """Delete accounting transactions linked to course_payments for the given enrollments.
+
+    Must be called BEFORE the enrollment/student rows are deleted so the cascade
+    doesn't silently orphan revenue transactions.
+    """
+    if not enrollment_ids:
+        return
+    try:
+        pmts_res = (
+            supabase.table("course_payments")
+            .select("posted_transaction_id")
+            .in_("enrollment_id", enrollment_ids)
+            .execute()
+        )
+        txn_ids = [
+            p["posted_transaction_id"]
+            for p in (pmts_res.data or [])
+            if p.get("posted_transaction_id")
+        ]
+        for txn_id in txn_ids:
+            _delete_txn(txn_id)
+    except Exception as exc:
+        logger.warning(
+            "Transaction reversal failed for enrollments %s: %s", enrollment_ids, exc
+        )
 
 
 def _build_payment_description(enrollment_id: str) -> str:
