@@ -819,6 +819,41 @@ Requirements captured only — no code written. Do NOT implement unless explicit
 - Profile drawers become simpler (demographics only: name, DOB, passport, financial, academic background).
 - Applications gain a richer detail view (selector + roadmap embedded there).
 
+**Additional requirements (clarified by owner):**
+- The Applications and Job Applications pages should be **fully dynamic** — showing **all application-related detail in one place**:
+  - Education application: institute/university, course/program, destination country, admission roadmap + progress.
+  - Job application: employer, job, placement roadmap + progress.
+- Applications should be **categorized by application type**: e.g., **"University"**, **"Language School"**, and **"Other"**. (The "Language School" category ties into the Language Course track — a course student converting to a Japan language-school abroad applicant would appear under that category on the Applications page.)
+- Student and Candidate profile pages remain **pure demographic/contact data** (already largely the case). Rich application/destination/roadmap detail belongs on the Applications/Job Applications pages.
+- The **"Apply"** action on a Student or Candidate profile creates a new Application (categorized by type) and navigates to it. This implies an `application_type` field (or equivalent) on the `applications` table.
+- A student may have multiple applications (different types, different destinations, different intakes) — all visible and manageable on the Applications page.
+- **This remains a planned chunk, not yet built.**
+
+---
+
+### PF-4: Roadmap Step Editing & Rich-Text (Admission & Placement Roadmaps)
+
+**Context:** The admission roadmap (`AdmissionRoadmap.jsx`) and placement roadmap (`PlacementRoadmap.jsx`) display ordered steps sourced from `admission_steps` / `placement_steps` tables (via templates). Currently steps are defined once in the template and rendered read-only or with status controls (Pending/Current/Done) on a per-student/per-candidate basis. This feature adds authoring power to both the template step list and (optionally) the live per-record roadmap.
+
+**Requirements:**
+
+**(a) Inline step editing** — After a step exists (in a template or on a live roadmap), the user can edit the step's **title** and **description** in-place without navigating away to the template management page.
+
+**(b) Drag-and-drop reordering** — Steps can be reordered by dragging within the list. The sort order must persist (implies a `position` or `order` field on the roadmap-step table; `step_order` already exists on `admission_steps` / `placement_steps` and should be updated on drop).
+
+**(c) Rich-text step description** — The step description field supports **word-processor-style formatting**: at minimum **bullet points** and **numbered lists**; ideally also **bold** and **italic**. Storage: decide between **HTML** (rendered with a sanitizer) or **Markdown** (rendered with a Markdown component). A frontend rich-text editor component is required (e.g., TipTap, Quill, or equivalent lightweight library).
+
+**Scope decision (resolve at build time):**
+- Does inline editing apply to **template** steps only (editing in `AdmissionTemplates.jsx` / `PlacementTemplates.jsx`), to the **live per-student/per-candidate roadmap steps**, or **both**?
+- Does each student/candidate get their own overrideable copy of step text, or does editing the template propagate to all records on that template? A pragmatic default: edits apply to the template-level steps (shared source); per-record overrides are a future enhancement.
+
+**Implementation notes for build time:**
+- Check the actual schema of `admission_steps` and `placement_steps` before implementing. `step_order` already exists on both; confirm it is respected by current list rendering. Check whether `description` columns are plain `text` (sufficient for HTML/Markdown without migration).
+- The backend needs: `PATCH /admission-templates/{template_id}/steps/{step_id}` (or equivalent) to accept updated title, description, and step_order. For bulk drag-reorder, add `PATCH /admission-templates/{id}/steps/reorder` → receives `[{id, step_order}]` array.
+- Parallel changes required for `placement_templates` / `placement_steps` — keep both tracks in sync.
+
+**This is a focused enhancement chunk, not yet built.**
+
 ---
 
 ---
@@ -855,8 +890,9 @@ New dedicated table, separate from the existing `students` abroad-applicant tabl
 ### Component 2 — Courses + Course Registration Page
 
 - **`courses` table** — defines course offerings: course name (JLPT N5, IELTS, GRE, GMAT, …), default course fee, currency, description, is_active.
-- **Course Registration page** — enrol a course student into a course, capturing the course fee at time of registration. This fee is the per-student revenue amount. The registration record ties: `course_student_id` ↔ `course_id` ↔ `batch_id` (nullable until assigned to a batch) ↔ `fee_amount` ↔ `payment_status`.
-- **Accounting integration:** when a course fee is collected (payment_status → 'paid'), auto-post as a **revenue transaction** in the `transactions` table. Suggested account: a dedicated revenue account such as 4300 "Test Preparation Course Registration" (add to chart of accounts if not present), or reuse the nearest existing revenue code. The posting must be traceable to the specific course student and batch.
+- **Course Registration page** — enrol a course student into a course, capturing the course fee at time of registration. This fee is the per-student revenue amount.
+- **`course_enrollments` table (explicit model):** a course student may enrol in **multiple courses** — the relationship is `course_students` 1 → many `course_enrollments` → `courses`. The `course_enrollments` record ties: `course_student_id` ↔ `course_id` ↔ `batch_id` (nullable until assigned to a batch) ↔ **`agreed_fee` float** (the fee negotiated at enrollment time, which may differ from the course default) ↔ `payment_status`. This table is the unit of course-fee tracking.
+- **Accounting integration:** when a course enrollment fee is collected (payment_status → 'paid'), auto-post as a **revenue transaction** in the `transactions` table. Suggested account: a dedicated revenue account such as 4300 "Test Preparation Course Registration" (add to chart of accounts if not present), or reuse the nearest existing revenue code. The posting must be traceable to the specific course student and batch. **This auto-posting is the chunk immediately after the course-student/courses/enrollment foundation is built** — it reuses the same `_sync_fee_accounting`-style pattern established in C15 (no additional infrastructure needed).
 
 ---
 
