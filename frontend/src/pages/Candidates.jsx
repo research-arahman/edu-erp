@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import EmploymentSelector from '../components/EmploymentSelector';
 import PlacementRoadmap from '../components/PlacementRoadmap';
 import { matchesQuery } from '../lib/search';
+
+const FINANCE_ROLES = ['owner', 'manager', 'accountant'];
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -152,6 +155,8 @@ function StatusBadge({ status }) {
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function Candidates() {
+  const { user } = useAuth();
+
   const [candidates,   setCandidates]   = useState([]);
   const [countries,    setCountries]    = useState([]);
   const [qualTypes,    setQualTypes]    = useState([]);
@@ -167,6 +172,9 @@ export default function Candidates() {
   const [saving,       setSaving]       = useState(false);
   const [formError,    setFormError]    = useState(null);
   const [selectorKey,  setSelectorKey]  = useState(0);
+
+  const [feesSummary,  setFeesSummary]  = useState(null);
+  const [feesLoading,  setFeesLoading]  = useState(false);
 
   // ── data loading ───────────────────────────────────────────────────────────
 
@@ -207,6 +215,8 @@ export default function Candidates() {
     setFormError(null);
     setSelected(null);
     setSelectorKey((k) => k + 1);
+    setFeesSummary(null);
+    setFeesLoading(false);
     setPanel('add');
   }
 
@@ -252,6 +262,14 @@ export default function Candidates() {
     setFormError(null);
     setSelected(candidate);
     setSelectorKey((k) => k + 1);
+    setFeesSummary(null);
+    if (FINANCE_ROLES.includes(user?.role)) {
+      setFeesLoading(true);
+      api.get(`/candidates/${candidate.id}/fees-summary`)
+        .then(setFeesSummary)
+        .catch(() => {})
+        .finally(() => setFeesLoading(false));
+    }
     setPanel('edit');
   }
 
@@ -259,6 +277,8 @@ export default function Candidates() {
     setPanel(null);
     setSelected(null);
     setFormError(null);
+    setFeesSummary(null);
+    setFeesLoading(false);
   }
 
   // ── form handlers ──────────────────────────────────────────────────────────
@@ -844,6 +864,61 @@ export default function Candidates() {
                     candidateId={panel === 'edit' ? selected?.id : null}
                   />
                 </div>
+
+                {/* ── 8. Fees summary (finance roles only, edit mode only) ─── */}
+                {panel === 'edit' && FINANCE_ROLES.includes(user?.role) && (
+                  <div className="border-t border-gray-100 pt-4">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Fees
+                    </p>
+                    {feesLoading ? (
+                      <p className="text-xs text-gray-400">Loading fees…</p>
+                    ) : feesSummary ? (
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                          {feesSummary.total_paid > 0 && (
+                            <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
+                              Fees paid: ৳{feesSummary.total_paid.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                          {feesSummary.total_pending > 0 && (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                              Pending: ৳{feesSummary.total_pending.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                          {feesSummary.total_paid === 0 && feesSummary.total_pending === 0 && (
+                            <p className="text-xs text-gray-400">No fees recorded.</p>
+                          )}
+                        </div>
+                        {feesSummary.fees.length > 0 && (
+                          <div className="divide-y divide-gray-100 rounded-md border border-gray-200 text-xs">
+                            {feesSummary.fees.map((fee) => (
+                              <div key={fee.id} className="flex items-center justify-between px-3 py-1.5">
+                                <span className="text-gray-600">{fee.milestone || '—'}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-gray-800">
+                                    {fee.currency || 'BDT'} {Number(fee.amount).toLocaleString('en-IN')}
+                                  </span>
+                                  <span className={`rounded-full px-2 py-0.5 font-medium ${
+                                    fee.status === 'paid'
+                                      ? 'bg-green-100 text-green-700'
+                                      : fee.status === 'invoiced'
+                                      ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    {fee.status}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400">No fees recorded.</p>
+                    )}
+                  </div>
+                )}
 
               </div>
 

@@ -50,3 +50,24 @@ def delete_candidate(candidate_id: str):
     if not result.data:
         raise HTTPException(status_code=404, detail="Candidate not found")
     return result.data[0]
+
+
+@router.get("/{candidate_id}/fees-summary", dependencies=[Depends(require_role("owner", "manager", "accountant"))])
+def get_candidate_fees_summary(candidate_id: str):
+    result = supabase.table("service_fees").select(
+        "id,amount,currency,status,milestone,paid_date"
+    ).eq("candidate_id", candidate_id).order("created_at", desc=True).execute()
+    fees = result.data or []
+
+    total_paid = sum(float(f["amount"]) for f in fees if f.get("status") == "paid")
+    total_pending = sum(float(f["amount"]) for f in fees if f.get("status") in ("pending", "invoiced"))
+    paid_count = sum(1 for f in fees if f.get("status") == "paid")
+    pending_count = sum(1 for f in fees if f.get("status") in ("pending", "invoiced"))
+
+    return {
+        "total_paid": total_paid,
+        "total_pending": total_pending,
+        "paid_count": paid_count,
+        "pending_count": pending_count,
+        "fees": fees,
+    }
