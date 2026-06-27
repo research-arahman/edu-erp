@@ -772,4 +772,199 @@ Requirements captured only — no code written. Do NOT implement unless explicit
 
 ---
 
+---
+
+## 14. PLANNED: LANGUAGE COURSE TRACK (3rd track) + Accounting auto-posting — not yet built
+
+> **Status:** Captured for planning only. No code written. Do NOT implement unless explicitly requested. This is the full vision spec for the third business line.
+
+---
+
+### Overview
+
+The business is adding a **third revenue track** alongside the existing Education (abroad) and Employment/SSW tracks: an **on-site Language / Test-Prep Course business** run from the office. Courses currently planned: JLPT N5, IELTS, GRE, GMAT, and other Western-pathway prep. This is a distinct revenue line with its own student entity, batch system, instructors, and finance flows.
+
+**Key distinction:** course students are people who take in-office prep courses. They are entirely separate from the `students` table (abroad applicants). A course student may later convert into an education-track student or SSW candidate, mirroring the existing inquiry → student/candidate conversion pattern.
+
+---
+
+### Component 1 — Course Student Entity (`course_students` table)
+
+New dedicated table, separate from the existing `students` abroad-applicant table. Fields to include:
+- Own demographic / contact fields (name, DOB, phone, email, address)
+- The course(s) they are enrolled in
+- Enrollment / registration date
+- Status (active / completed / dropped / etc.)
+- **Conversion link:** `converted_student_id` (uuid nullable FK → students) and `converted_candidate_id` (uuid nullable FK → candidates), mirroring the `inquiries` conversion pattern. A course student can later become an education-track abroad student or an SSW candidate — apply the same convert-once guard.
+
+**Do not store course students in the existing `students` table.** Demographics and context are different; keeping them separate avoids schema pollution.
+
+---
+
+### Component 2 — Courses + Course Registration Page
+
+- **`courses` table** — defines course offerings: course name (JLPT N5, IELTS, GRE, GMAT, …), default course fee, currency, description, is_active.
+- **Course Registration page** — enrol a course student into a course, capturing the course fee at time of registration. This fee is the per-student revenue amount. The registration record ties: `course_student_id` ↔ `course_id` ↔ `batch_id` (nullable until assigned to a batch) ↔ `fee_amount` ↔ `payment_status`.
+- **Accounting integration:** when a course fee is collected (payment_status → 'paid'), auto-post as a **revenue transaction** in the `transactions` table. Suggested account: a dedicated revenue account such as 4300 "Test Preparation Course Registration" (add to chart of accounts if not present), or reuse the nearest existing revenue code. The posting must be traceable to the specific course student and batch.
+
+---
+
+### Component 3 — Batches
+
+- **`batches` table** — a batch belongs to a course; has: `course_id`, `batch_name` / `batch_code`, `start_date`, `end_date` / period label, `assigned_instructor_id` (FK → `instructors` table, see Component 4), `max_seats`, `is_active`.
+- **`batch_enrollments` table** — joins `course_students` ↔ `batches` with `payment_status` (paid / partial / pending) and `paid_amount` float.
+- **Language-course page UI** should show:
+  - Headcount per batch (how many students enrolled).
+  - Per-student payment completion status within each batch.
+- A course student's profile should show their current batch and payment status.
+
+---
+
+### Component 4 — Contract Instructors (NOT fixed staff)
+
+Instructors are hired **contractually per-course / per-class / per-hours** and are **distinct from system staff** (they do not necessarily have login accounts; they are not in `profiles`). Model them as their own entity:
+
+- **`instructors` table** — name, phone, email, specialization (JLPT, IELTS, etc.), is_active, notes.
+- **`instructor_engagements` table** — links an instructor to a specific batch/course: `instructor_id`, `batch_id`, `engagement_type` (per_hour / per_class / per_course), `agreed_rate` (float), `currency`, `total_hours` or `total_classes` (nullable), `notes`.
+- **`instructor_payments` table** — records actual payments made to an instructor for an engagement: `instructor_id`, `engagement_id`, `amount` (float), `currency`, `payment_date`, `status` (pending / paid / cancelled), `notes`.
+- **Accounting integration:** when an instructor payment is recorded (status → 'paid'), auto-post as an **expense transaction** in `transactions`. Suggested account: 5100 "Freelance / External Consultant Fees" or a dedicated instructor-cost account. Posting must be traceable to the instructor and batch.
+
+---
+
+### Component 5 — Per-Student Course Finance → Accounting (auto-posting)
+
+The accounting plumbing for the course track works as follows:
+
+| Event | Accounting effect |
+|---|---|
+| Course registration fee collected (payment_status → 'paid') | Revenue transaction posted (debit receivable / bank, credit course revenue account) |
+| Instructor payment made (status → 'paid') | Expense transaction posted (debit instructor-cost account, credit payable / bank) |
+
+Every posting must carry metadata: `course_student_id` / `batch_id` for fee postings; `instructor_id` / `engagement_id` for expense postings. This allows the owner to drill down into what drove each accounting entry.
+
+**Dependency note:** this auto-posting plumbing is the same mechanism needed for `service_fees` (PF-2b). Build the shared auto-posting infrastructure first (see Build Sequence below — Step 0).
+
+---
+
+### Component 6 — Owner Finance Command-Center (Dashboard)
+
+A finance-gated dashboard (owner / manager / accountant only) that aggregates ALL pending and actual money flows across the entire business:
+
+**Pending money IN (to collect):**
+- Course fees: `batch_enrollments` where `payment_status != 'paid'` — grouped by course/batch, showing student name + amount due.
+- Service fees: `service_fees` where `status = 'pending'` or `'invoiced'` — existing tracker.
+
+**Pending money OUT (to pay):**
+- Instructor payments: `instructor_payments` where `status = 'pending'`.
+- Other planned expenses: salary runs, business expenses (from manual accounting entries).
+
+**Summary view:**
+- Total income (this month / YTD) from accounting transactions (revenue accounts).
+- Total expenses (this month / YTD) from accounting transactions (expense accounts).
+- Outstanding receivables vs. outstanding payables at a glance.
+
+**Implementation:** Built on top of `transactions` (accounting ledger) + `service_fees` + `batch_enrollments` + `instructor_payments`. The dashboard is read-only aggregation; all underlying records are managed in their respective pages.
+
+---
+
+### Component 7 — Course Lead Funnel (Inquiries extension)
+
+Course leads arrive primarily from **social-media advertising** (people interested in JLPT N5 / IELTS / GRE etc.). The funnel:
+
+1. Lead comes in (social media / walk-in / referral)
+2. Staff **calls** the prospect
+3. Prospect visits office
+4. Some **register** (→ become a course student)
+5. Complete the course → outcome (pass test, convert to abroad student, etc.)
+
+**This largely maps onto the existing `inquiries` tracker**, extended for the course track:
+- `interest_track` column on `inquiries` currently supports `'education'` and `'employment'`. Add `'language_course'` (or `'course'`) as a third allowed value.
+- A course inquiry can convert into a course student (new conversion endpoint: `POST /inquiries/{id}/convert-course-student`). Apply the same convert-once guard pattern as existing conversions.
+- Inquiry form: show course-specific fields (e.g. target test, target score, target test date) when `interest_track = 'language_course'`.
+
+---
+
+### Component 8 — Japan Language-Course Roadmap Template (PRESERVE VERBATIM)
+
+The owner provided a detailed **4-phase agency workflow** for admitting a Bangladeshi student to a Japanese language school (~6 months before arrival). This maps onto the reusable process-template pattern (like admission/placement templates) but is specific to the language-school pathway. Preserve the full detail below as the authoritative source for the roadmap template when it is built.
+
+---
+
+**PHASE 1 — Student Screening & Pre-Qualification**
+
+1. **Education history:** Verify 12+ years of formal schooling (HSC or equivalent). Check study gap — ideally less than 5 years; if gap exists, obtain proof of activities or job experience during that period.
+2. **Japanese language ability:** Student must have a certificate of ≥150 hours of Japanese study **OR** a JLPT N5 / NAT-TEST Level 5 pass. Note: the Japanese school often schedules a Skype/Zoom interview — do not submit a student who cannot introduce themselves in Japanese.
+3. **Financial sponsor check:** Sponsor (usually a parent) must demonstrate approximately 15–20 Lakh BDT (~1.5–2 million JPY) in liquid, stable funds. Funds must appear stable — not newly deposited.
+
+---
+
+**PHASE 2 — School Selection & Application (5–6 months before departure)**
+
+- Agency must have a partnership / agent registration with Japanese language schools (contact "Overseas Admissions" department of target schools).
+- **Intake sessions and apply-by deadlines:**
+  - April intake → apply October / November
+  - July intake → apply February / March
+  - October intake → apply April / May
+  - January intake → apply August / September
+- Submit the school's "Application for Admission" on the student's behalf.
+- School schedules a **video interview** — prepare the student (why Japan, who is the sponsor, future plans).
+
+---
+
+**PHASE 3 — COE Documentation (most work-intensive phase)**
+
+Once accepted, collect and translate all required documents for the Certificate of Eligibility (COE) submission to Japan's Immigration Bureau. The school submits to Immigration as proxy.
+
+**A) Student documents:**
+- Original passport (minimum 6 months validity remaining)
+- All academic certificates and marksheets: SSC, HSC, Bachelor's (if applicable)
+- Japanese language study certificate (150-hour completion) **OR** JLPT / NAT-TEST pass certificate
+- English-language birth certificate
+- Photographs: 3 cm × 4 cm, white background
+
+**B) Sponsor financial documents:**
+- Bank solvency certificate (~2 million JPY / ~18–20 Lakh BDT)
+- 6–12 months bank statement (caution: large sudden deposits are a red flag to Immigration)
+- Proof of income: trade license / salary certificate / 3 years' tax return with TIN
+- Relationship proof: Nikahnama (if parents are married) / parents' marriage deed; Family Tree Certificate from City Corporation or Union Parishad
+
+**C) Agency task:**
+- Scan all documents clearly; assemble a digital package; send to the Japanese school, which submits to the Immigration Bureau on the student's behalf.
+
+---
+
+**PHASE 4 — COE Issuance & Visa Processing (1–2 months before departure)**
+
+1. COE result takes 2–3 months (issued or rejected).
+2. On approval, school sends an invoice (COE copy + tuition invoice). Instruct the student / sponsor to SWIFT-transfer approximately 700,000–800,000 JPY (first-year tuition) to the school's account.
+3. School mails the original COE + admission letter via DHL / EMS / FedEx.
+4. **Visa application** at the Embassy of Japan in Dhaka: submit passport, visa application form, original COE, photo, and a cover letter. The embassy may conduct an interview in Japanese.
+5. Once the visa is pasted (~1 week processing), book the flight and inform the school of the arrival date so they can arrange airport pickup.
+
+**Pro-tips:**
+- Pre-screen applicants strictly: too many immigration rejections will cause Japanese schools to stop working with the agency.
+- Require notarized English / Japanese translation of all Bengali-language documents.
+- Conduct strict mock interviews with the student before the school interview: questions about tuition amount, father's annual income, why Japan, future plans after graduating.
+
+---
+
+### Recommended Build Sequence
+
+> **Step 0 (build FIRST — prerequisite):** Accounting Phase 2 — **Auto-posting infrastructure.** When a `service_fee` is marked `'paid'`, auto-create a revenue transaction in `transactions` AND optionally mark the linked student/candidate record. This shared auto-posting plumbing underpins ALL course money-flows (course fees in, instructor payments out, pending finance dashboard). Build before any course features.
+
+**Then, in order:**
+
+| Step | What to build | Notes |
+|---|---|---|
+| (a) | Course Student entity (`course_students`) + Courses (`courses`) + Registration page (fee → accounting) | Needs Step 0 for auto-posting |
+| (b) | Batches (`batches` + `batch_enrollments`) + per-student payment status | Depends on (a) |
+| (c) | Contract Instructors (`instructors` + `instructor_engagements` + `instructor_payments`) → accounting expense | Needs Step 0 for auto-posting |
+| (d) | Owner finance command-center / dashboard (pending in/out, income/expense summary) | Aggregates accounting + service_fees + course fees + instructor payments; build after (a)–(c) |
+| (e) | Course lead funnel: extend `inquiries.interest_track` to include `'language_course'`; add course-inquiry → course-student conversion endpoint | Reuses existing inquiry infrastructure |
+| (f) | Japan language-course roadmap template (from the Phase 1–4 workflow in Component 8) attached to course students; reuse the admission/placement template pattern | |
+
+**Key dependency chain:** Step 0 (auto-posting) → (a) course fees post as revenue → (c) instructor payments post as expense → (d) dashboard aggregates all of the above.
+
+---
+
 *Snapshot as of June 26, 2026. As building continues this will drift — regenerate at the next milestone. Keep CLAUDE.md in sync.*
