@@ -48,6 +48,13 @@ const NAV = [
     ],
   },
   {
+    group: 'Language Courses',
+    items: [
+      { to: '/courses',         label: 'Courses' },
+      { to: '/course-students', label: 'Course Students' },
+    ],
+  },
+  {
     group: 'Operations',
     items: [
       { to: '/inquiries', label: 'Inquiries' },

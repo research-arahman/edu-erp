@@ -25,6 +25,8 @@ import DestinationExplorer from './pages/DestinationExplorer';
 import ReferralPartners from './pages/ReferralPartners';
 import ServiceFees from './pages/ServiceFees';
 import Staff from './pages/Staff';
+import Courses from './pages/Courses';
+import CourseStudents from './pages/CourseStudents';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -80,6 +82,8 @@ function AppRoutes() {
           />
           <Route path="referral-partners" element={<ReferralPartners />} />
           <Route path="service-fees" element={<ServiceFees />} />
+          <Route path="courses" element={<Courses />} />
+          <Route path="course-students" element={<CourseStudents />} />
           <Route
             path="staff"
             element={user?.role === 'owner' ? <Staff /> : <Navigate to="/" replace />}

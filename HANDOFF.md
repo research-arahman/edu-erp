@@ -827,6 +827,7 @@ Requirements captured only — no code written. Do NOT implement unless explicit
 - Student and Candidate profile pages remain **pure demographic/contact data** (already largely the case). Rich application/destination/roadmap detail belongs on the Applications/Job Applications pages.
 - The **"Apply"** action on a Student or Candidate profile creates a new Application (categorized by type) and navigates to it. This implies an `application_type` field (or equivalent) on the `applications` table.
 - A student may have multiple applications (different types, different destinations, different intakes) — all visible and manageable on the Applications page.
+- **Core multi-application requirement (clarified by owner, June 27, 2026):** The Applications system must support **MULTIPLE applications PER PERSON to MULTIPLE INSTITUTIONS running in parallel**. Specifically: **(a)** an abroad **Education student** can apply to multiple universities/programs simultaneously (e.g., University of Tokyo AND Osaka University at the same time); **(b)** a **language-course student** progressing toward Japan can apply to multiple Japanese **language schools** at once — not just one. The unit of work is one application per institution. This is: **one applicant → many institution applications**, each categorized by type (**University / Language School / Other**), each carrying its own destination selection, admission roadmap, and independent progress tracking.
 - **This remains a planned chunk, not yet built.**
 
 ---

@@ -632,3 +632,64 @@ class TransactionUpdate(BaseModel):
     payment_method: Optional[str] = None
     student_id: Optional[str] = None
     is_reversal: Optional[bool] = None
+
+
+# ── Language Courses ──────────────────────────────────────────────────────────
+
+class CourseCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    default_fee: Optional[float] = 0
+    currency: Optional[str] = "BDT"
+    is_active: Optional[bool] = True
+
+
+class CourseUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    default_fee: Optional[float] = None
+    currency: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class CourseStudentCreate(BaseModel):
+    full_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    address: Optional[str] = None
+    status: Optional[str] = "active"
+    referred_by_partner_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CourseStudentUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    address: Optional[str] = None
+    status: Optional[str] = None
+    referred_by_partner_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class EnrollmentCreate(BaseModel):
+    course_id: str
+    agreed_fee: Optional[float] = None
+    currency: Optional[str] = None
+    enrollment_date: Optional[str] = None
+    status: Optional[str] = "enrolled"
+    notes: Optional[str] = None
+
+
+class EnrollmentUpdate(BaseModel):
+    course_id: Optional[str] = None
+    agreed_fee: Optional[float] = None
+    currency: Optional[str] = None
+    status: Optional[str] = None
+    payment_status: Optional[str] = None
+    enrollment_date: Optional[str] = None
+    notes: Optional[str] = None
