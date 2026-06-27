@@ -693,3 +693,22 @@ class EnrollmentUpdate(BaseModel):
     payment_status: Optional[str] = None
     enrollment_date: Optional[str] = None
     notes: Optional[str] = None
+
+
+# ── Course Payments ───────────────────────────────────────────────────────────
+
+class CoursePaymentCreate(BaseModel):
+    amount: float
+    payment_date: Optional[str] = None
+    payment_method: Optional[str] = None
+    reference: Optional[str] = None
+    notes: Optional[str] = None
+    currency: Optional[str] = None
+
+
+class CoursePaymentUpdate(BaseModel):
+    amount: Optional[float] = None
+    payment_date: Optional[str] = None
+    payment_method: Optional[str] = None
+    reference: Optional[str] = None
+    notes: Optional[str] = None
