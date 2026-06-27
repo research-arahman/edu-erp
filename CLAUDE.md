@@ -108,19 +108,22 @@ Wait for `localhost:5173`. Leave running. Never run `uvicorn` here. Restart if `
 25. **JWT verification uses JWKS/ES256, not the legacy HS256 secret.** Backend fetches public keys from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` via `PyJWKClient` at runtime. Do NOT use `SUPABASE_JWT_SECRET` for token verification — it is present in config but not used for this purpose. Audience must be `"authenticated"`.
 26. **Task assignment scope rule B.** Roles that may assign to others: `owner`, `manager`, `team_leader`. Scope: owner + manager → any active staff; `team_leader` → only staff whose `profile.team` matches the team_leader's own team (plus self). Everyone (incl. counselor/accountant/staff) can always self-assign (`assigned_to == current_user.id`). `GET /tasks/assignable-users` returns only users the caller may assign to, respecting this scope. PATCH/DELETE permission checks mirror assignment scope (assigner, owner, manager, or team_leader within same team can manage; assignee can update their own status).
 27. **ALL feature routers are now auth-gated — security enforcement is complete.** Every endpoint under `/api` requires `Depends(get_current_user)` at the router level (anonymous requests → 401). DELETEs require `require_role("owner","manager")` (insufficient role → 403). `service_fees` is further restricted: all its endpoints require `require_role("owner","manager","accountant")`; deletes still require owner/manager. `/api/admin/*` requires `require_role("owner")`. Verified: anonymous GET → 401; owner → 200; counselor on `/service-fees` → 403. Per-row visibility ("only my students") is still deferred — needs `assigned_counselor` wiring.
+28. **Accounting model: single-posting, account-driven, refund-aware.** Users post to one account (revenue or expense/cogs only — asset/liability/equity and header accounts blocked with HTTP 400). Direction is auto-derived server-side (revenue → credit; expense/cogs → debit). `is_reversal=true` flips the derived direction and subtracts from the account-type's summary total (a refund on revenue reduces total_revenue; a reversal on an expense reduces total_expenses). Paid `service_fees` auto-post to account 4400 (`payer_type='partner'`) or 4200 (otherwise) via `_sync_fee_accounting()` in `service_fees.py`; the link is stored in `service_fees.posted_transaction_id` and prevents double-posting. Un-paying a fee deletes the linked transaction (reversal). All accounting endpoints require `require_role("owner","manager","accountant")`.
 
 ---
 
 ## 6. What's Built (summary — see HANDOFF.md for full detail)
 
 **Backend routers (all working, all under `/api`):**
-`countries`, `institutes`, `programs` (+ sessions), `admission_templates` (+ steps), `placement_templates` (+ steps), `industries`, `employers`, `jobs` (+ qual-types), `students`, `candidates`, `student_progress`, `candidate_progress`, `inquiries` (+ convert + convert-candidate), `applications`, `job_applications`, `referral_partners`, `service_fees`, `selector_education`, `selector_employment`, `admin_users` (owner-only staff CRUD), **`tasks`** (auth-gated; POST/GET mine/GET assigned/PATCH/DELETE + assignable-users)
+`countries`, `institutes`, `programs` (+ sessions), `admission_templates` (+ steps), `placement_templates` (+ steps), `industries`, `employers`, `jobs` (+ qual-types), `students` (+ fees-summary), `candidates` (+ fees-summary), `student_progress`, `candidate_progress`, `inquiries` (+ convert + convert-candidate), `applications`, `job_applications`, `referral_partners`, `service_fees` (auto-posts to `transactions` on paid via `_sync_fee_accounting`), **`accounting`** (finance-gated; GET /accounting/accounts; GET/POST/PATCH/DELETE /accounting/transactions; GET /accounting/summary), `selector_education`, `selector_employment`, `admin_users` (owner-only staff CRUD), **`tasks`** (auth-gated; POST/GET mine/GET assigned/PATCH/DELETE + assignable-users)
 
 **Auth endpoint:** `GET /api/me` — current user identity + profile.
 
+**Fees-summary endpoints (finance-gated):** `GET /students/{id}/fees-summary` and `GET /candidates/{id}/fees-summary` return `{total_paid, total_pending, paid_count, pending_count, fees:[...]}` computed from `service_fees`.
+
 **Frontend pages (all working):**
-Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees, **Login**, **Staff** (owner-only; role/position/team/Reports-To dropdowns), **MyTasks** (every user — tasks assigned to me, todo→in_progress→done, self-create personal tasks with optional student/candidate link), **ManageTasks** (owner/manager/team_leader — assign tasks, scope-enforced assignee dropdown, Related To student/candidate, edit/delete/status filters).
-Accounting is a placeholder. Tasks.jsx (old placeholder) replaced by MyTasks.jsx + ManageTasks.jsx.
+Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees, **Login**, **Staff** (owner-only; role/position/team/Reports-To dropdowns), **MyTasks** (every user — tasks assigned to me, todo→in_progress→done, self-create personal tasks with optional student/candidate link), **ManageTasks** (owner/manager/team_leader — assign tasks, scope-enforced assignee dropdown, Related To student/candidate, edit/delete/status filters), **Accounting** (finance-gated /accounting; summary cards Revenue/Expenses/Net; date-range + account + direction filters; transactions ledger with Effect labels Income/Refund/Expense/Reversal; Add/Edit drawer with postable-account dropdown + is_reversal checkbox + optional student link; Chart of Accounts read-only tab; BDT ৳ formatting).
+Tasks.jsx (old placeholder) replaced by MyTasks.jsx + ManageTasks.jsx.
 
 **Auth & session:** `lib/supabase.js` (Supabase JS client; localStorage persistence), `context/AuthContext.jsx` (useAuth — session + `/api/me` user profile), `App.jsx` gated (loading → Login → app). `Layout.jsx` shows TASKS nav group (My Tasks for everyone; Assign/Manage Tasks for owner/manager/team_leader only) and ADMIN nav group (owner-only; Staff link), plus Logout button with user name/role. All `api.js` requests automatically attach the JWT Bearer token.
 
@@ -130,18 +133,21 @@ Accounting is a placeholder. Tasks.jsx (old placeholder) replaced by MyTasks.jsx
 
 **Data seeded:** 39 countries (Japan = id 1); 16 SSW industry fields; JLPT/JFT/SSW qual types; one real institute (Yamaguchi University); one admission template (Japan Master's Research); one placement template (Japan Nursing Care SSW, country 1 / industry 1); one referral partner (Sakura Japanese Language Center, fixed 15000 BDT). **Owner account:** `educonsultancy.admission@gmail.com` (role=`owner`; full_name = "Abdur Rahman").
 
-**Key milestones reached:** full CRUD all data pages; cascading selector both tracks; interactive roadmap progress tracking (students and candidates); Kanban pipelines (8-stage education, 7-stage employment); inquiry conversion (→student and →candidate, convert-once guard); referral partner + service fee tracking; forgiving client-side search; **authentication (JWKS/ES256, `get_current_user`, `require_role`); login + session persistence; owner-only staff management UI** (role/position/team dropdowns, Reports To chain); **assigned tasks phase 1** (My Tasks + Assign/Manage views, scope-enforced assignment per rule B, student/candidate linking, auth-gated tasks router); **API security enforcement complete** (all feature routers auth-gated; service_fees finance-gated; anon → 401; counselor on /service-fees → 403).
+**Key milestones reached:** full CRUD all data pages; cascading selector both tracks; interactive roadmap progress tracking (students and candidates); Kanban pipelines (8-stage education, 7-stage employment); inquiry conversion (→student and →candidate, convert-once guard); referral partner + service fee tracking; forgiving client-side search; **authentication (JWKS/ES256, `get_current_user`, `require_role`); login + session persistence; owner-only staff management UI** (role/position/team dropdowns, Reports To chain); **assigned tasks phase 1** (My Tasks + Assign/Manage views, scope-enforced assignment per rule B, student/candidate linking, auth-gated tasks router); **API security enforcement complete** (all feature routers auth-gated; service_fees finance-gated; anon → 401; counselor on /service-fees → 403); **Accounting Phase 1** (manual ledger — single-posting account-driven model, revenue/expense-only posting, is_reversal refund flag, refund-aware summary); **Accounting Phase 2** (service fees paid → auto-post to revenue 4200/4400 idempotently; un-pay reverses and deletes transaction; `posted_transaction_id` link prevents double-posting; fees-paid indicator on student/candidate profiles for finance roles).
 
 ---
 
 ## 7. Remaining Work (in order)
 
-1. **Task Management — later phases** (NEXT) — assigned tasks (phase 1) is done. Remaining: fixed/daily task generation (lazy-on-login from `daily_task_templates`; needs `department_id` added to templates table and `profiles.department_id` + `profiles.tier` + `profiles.reports_to` extensions); verification step (staff explicitly confirm completion; unverified ≠ done); time/calendar flagging of missed tasks (auto-flag after `end_time` window); escalation notifications up the `reports_to` chain via `notifications` table. Full design in HANDOFF.md §10A.
-2. **Wire `assigned_counselor` / `created_by`** into feature routers now that all are auth-gated. `get_current_user()` is already available on every endpoint. Populate `created_by` from `get_current_user().id` when creating students/candidates/inquiries/applications; populate `assigned_counselor` when assigning. FK columns exist in DB but are omitted from all schemas and forms.
-3. **Deferred checklists** — `application_checklist` and `job_application_checklist` tables exist in DB. Seed items from `admission_requirements` on application create; tick-off UI in Kanban drawers; mirror for job applications.
-4. **Accounting UI, Dashboards** — see HANDOFF.md §13 for planned feature specs (Accounting Core PF-3, Service Fee paid→ledger PF-2).
-5. **Backend search endpoints** — add `?q=` to students/candidates GET if data grows large.
-6. **Google Drive integration; Render deployment** — `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as server env vars; `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time vars.
+1. **Task Management — later phases** — assigned tasks (phase 1) is done. Remaining: fixed/daily task generation (lazy-on-login from `daily_task_templates`; needs `department_id` added to templates table and `profiles.department_id` + `profiles.tier` + `profiles.reports_to` extensions); verification step (staff explicitly confirm completion; unverified ≠ done); time/calendar flagging of missed tasks (auto-flag after `end_time` window); escalation notifications up the `reports_to` chain via `notifications` table. Full design in HANDOFF.md §10A.
+2. **Language Course Track** — prerequisite Accounting Phase 2 auto-posting is now DONE. Build in order: course-student entity (`course_students`) + courses + registration page (course fee → auto-post to revenue) → batches + batch_enrollments → contract instructors + instructor_payments (expense auto-post) → owner finance command-center dashboard → course lead funnel (extend `interest_track` to `'language_course'`; add `/convert-course-student` endpoint) → Japan language-school roadmap template. Full spec in HANDOFF.md §14.
+3. **Wire `assigned_counselor` / `created_by`** into feature routers now that all are auth-gated. `get_current_user()` is already available on every endpoint. Populate `created_by` from `get_current_user().id` when creating students/candidates/inquiries/applications; populate `assigned_counselor` when assigning. FK columns exist in DB but are omitted from all schemas and forms.
+4. **Deferred checklists** — `application_checklist` and `job_application_checklist` tables exist in DB. Seed items from `admission_requirements` on application create; tick-off UI in Kanban drawers; mirror for job applications.
+5. **Marketing + company expense pages** — manual expense entries auto-post to accounting ledger. Company expense page needs file uploads (receipts) → requires pluggable file storage (Supabase Storage or Google Drive).
+6. **Apply-tab restructure** (PF-1) — move `EducationSelector` + `AdmissionRoadmap` from Student profile into Application record; same for Employment track. Full spec in HANDOFF.md §13.
+7. **Backend search endpoints** — add `?q=` to students/candidates GET if data grows large.
+8. **Security hardening pass** before go-live — per-row visibility for counselors (`assigned_counselor` filter), rate limiting, input sanitization audit.
+9. **Google Drive integration; Render deployment** — `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as server env vars; `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time vars.
 
 ---
 
@@ -157,6 +163,17 @@ backend/app/
                      StaffCreate / StaffUpdate / TaskCreate / TaskUpdate added
   database.py      — Supabase client (service-role key, bypasses RLS)
   routers/         — one file per resource (see §6 list above)
+    accounting.py  — ALL endpoints require_role("owner","manager","accountant");
+                     GET /accounting/accounts (chart of accounts ordered by code);
+                     GET /accounting/transactions?from_date=&to_date=&account_code=&direction=
+                       (enriched with account_name + student_name);
+                     POST /accounting/transactions (direction auto-derived: revenue→credit,
+                       expense/cogs→debit; rejects non-postable accounts HTTP 400; is_reversal
+                       flips direction);
+                     PATCH /accounting/transactions/{id};
+                     DELETE /accounting/transactions/{id};
+                     GET /accounting/summary?from_date=&to_date= (total_revenue, total_expenses,
+                       net, transaction_count; is_reversal-aware subtraction from totals)
     admin_users.py — owner-only GET/POST/PATCH /admin/users; self-lockout guard on PATCH
     tasks.py       — ALL endpoints auth-gated (Depends(get_current_user));
                      POST /tasks (create/assign; assigned_by=current; validates assignee active);
@@ -191,11 +208,23 @@ frontend/src/
                                       "+ Assign Task" drawer (assignee from /tasks/assignable-users;
                                       priority/due_date; Related To: None/Student/Candidate dropdown);
                                       edit/reassign/delete; status filter tabs; /manage-tasks guarded
+  pages/Accounting.jsx              — WORKING — finance-gated /accounting (owner/manager/accountant);
+                                      summary cards (Total Revenue green, Total Expenses red, Net);
+                                      date-range + account-code + direction filters; transactions
+                                      ledger with Effect labels (Income/Refund/Expense/Reversal);
+                                      Add/Edit drawer: postable-account dropdown, amount, is_reversal
+                                      checkbox, description, reference, payment_method, related student;
+                                      Chart of Accounts read-only tab; BDT ৳ formatting
   pages/                            — one .jsx per page
 
 supabase/migrations/  — ~30 timestamped .sql files; push with `supabase db push`
   *_add_task_related_links.sql      — adds related_student_id (uuid FK → students ON DELETE SET NULL)
                                        and related_candidate_id (uuid FK → candidates ON DELETE SET NULL) to tasks
+  *_add_txn_is_reversal.sql         — adds transactions.is_reversal (bool default false); flips
+                                       derived direction and subtracts from summary totals when true
+  *_add_service_fee_posted_txn.sql  — adds service_fees.posted_transaction_id (uuid FK → transactions
+                                       ON DELETE SET NULL); links paid fee to its auto-created txn;
+                                       prevents double-posting; cleared on reversal
   (previous: *_fix_handle_new_user_search_path.sql)
 ```
 

@@ -101,7 +101,24 @@ edu-erp/
 │           ├── applications.py        # CRUD + enriched list + PATCH for stage
 │           ├── job_applications.py    # CRUD + enriched list + PATCH for stage
 │           ├── referral_partners.py   # CRUD + ?type= & ?is_active= filters
-│           ├── service_fees.py        # CRUD + multi-filter GET + enriched list (partner/student/candidate names)
+│           ├── service_fees.py        # CRUD + multi-filter GET + enriched list (partner/student/candidate names);
+│           │                          #   _sync_fee_accounting(fee_row, user_id): when status→'paid' AND
+│           │                          #   posted_transaction_id NULL → auto-create revenue txn (acct 4400
+│           │                          #   if payer_type='partner', else 4200); set posted_transaction_id.
+│           │                          #   When un-paid + posted → DELETE txn + clear link (reversal). Idempotent.
+│           │                          #   GET /students/{id}/fees-summary + /candidates/{id}/fees-summary
+│           │                          #   (finance-gated; total_paid, total_pending, paid_count, pending_count)
+│           ├── accounting.py          # ALL endpoints require_role("owner","manager","accountant");
+│           │                          #   GET /accounting/accounts (chart of accounts ordered by code);
+│           │                          #   GET /accounting/transactions?from_date=&to_date=&account_code=&direction=
+│           │                          #     (enriched: account_name + student_name);
+│           │                          #   POST /accounting/transactions (direction auto-derived: revenue→credit,
+│           │                          #     expense/cogs→debit; rejects non-postable accts HTTP 400;
+│           │                          #     is_reversal flips direction);
+│           │                          #   PATCH /accounting/transactions/{id};
+│           │                          #   DELETE /accounting/transactions/{id};
+│           │                          #   GET /accounting/summary?from_date=&to_date= (total_revenue, total_expenses,
+│           │                          #     net, transaction_count; is_reversal subtracts from totals)
 │           ├── selector_education.py  # read-only cascading selector endpoints (education chain)
 │           ├── selector_employment.py # read-only cascading selector endpoints (employment chain)
 │           ├── admin_users.py         # owner-only: GET /admin/users (list+resolve team_leader_name);
@@ -174,7 +191,15 @@ edu-erp/
 │           │                                #   "+ Assign Task" drawer: assignee dropdown from /tasks/assignable-users (scope-enforced);
 │           │                                #   priority/due_date; Related To toggle None/Student/Candidate with conditional dropdown;
 │           │                                #   edit/reassign/delete; status filter tabs; /manage-tasks route guarded
-│           └── Accounting.jsx               # placeholder
+│           └── Accounting.jsx               # WORKING — finance-gated /accounting (owner/manager/accountant);
+                                             #   summary cards (Total Revenue green, Total Expenses red, Net);
+                                             #   date-range + account-code + direction filters;
+                                             #   transactions ledger with Effect labels
+                                             #     (Income / Refund / Expense / Reversal);
+                                             #   Add/Edit drawer: postable-account dropdown, amount,
+                                             #   is_reversal checkbox ("This is a refund/reversal"),
+                                             #   description, reference, payment_method, related student;
+                                             #   Chart of Accounts read-only tab; BDT ৳ formatting
 └── supabase/
     ├── config.toml
     └── migrations/                    # all applied; push with `supabase db push`
@@ -207,8 +232,12 @@ edu-erp/
         ├── *_add_converted_candidate_id.sql     # converted_candidate_id (uuid FK → candidates) on inquiries
         ├── *_add_interest_track.sql             # interest_track text CHECK ('education'|'employment') on inquiries
         ├── *_fix_handle_new_user_search_path.sql # fixes SECURITY DEFINER trigger: SET search_path = public; schema-qualifies public.profiles
-        └── *_add_task_related_links.sql         # related_student_id (uuid FK → students ON DELETE SET NULL)
-                                                  # + related_candidate_id (uuid FK → candidates ON DELETE SET NULL) on tasks
+        ├── *_add_task_related_links.sql         # related_student_id (uuid FK → students ON DELETE SET NULL)
+        │                                         # + related_candidate_id (uuid FK → candidates ON DELETE SET NULL) on tasks
+        ├── *_add_txn_is_reversal.sql            # adds transactions.is_reversal (bool default false);
+        │                                         # flips derived direction; subtracts from summary totals when true
+        └── *_add_service_fee_posted_txn.sql     # adds service_fees.posted_transaction_id (uuid FK → transactions
+                                                  # ON DELETE SET NULL); links paid fee to its auto-created txn
 ```
 
 ---
@@ -236,7 +265,14 @@ edu-erp/
 - **Applications** — CRUD; enriched list with student_name/program_name/program_level; `PATCH` for stage change on drag
 - **Job Applications** — CRUD; enriched list with candidate_name/job_title/employer_name; `PATCH` for stage change on drag
 - **Referral Partners** — CRUD; `GET` supports `?type=` & `?is_active=` filters
-- **Service Fees** — CRUD; `GET` supports `?status=&direction=&partner_id=&student_id=&candidate_id=` filters; list enriches rows with partner/student/candidate names
+- **Service Fees** — CRUD; `GET` supports `?status=&direction=&partner_id=&student_id=&candidate_id=` filters; list enriches rows with partner/student/candidate names. `_sync_fee_accounting()` auto-posts a revenue transaction when `status→'paid'` and reverses it when un-paid. `GET /students/{id}/fees-summary` and `GET /candidates/{id}/fees-summary` (finance-gated) return `{total_paid, total_pending, paid_count, pending_count, fees}`.
+- **Accounting** (all endpoints `require_role("owner","manager","accountant")` — finance-gated):
+  - `GET /accounting/accounts` — full chart of accounts ordered by code
+  - `GET /accounting/transactions?from_date=&to_date=&account_code=&direction=` — enriched with account_name + student_name
+  - `POST /accounting/transactions` — direction auto-derived server-side (revenue→credit; expense/cogs→debit); rejects non-postable accounts (asset/liability/equity + headers) with HTTP 400; `is_reversal=true` flips direction
+  - `PATCH /accounting/transactions/{id}` — update fields
+  - `DELETE /accounting/transactions/{id}`
+  - `GET /accounting/summary?from_date=&to_date=` — returns total_revenue, total_expenses, net, transaction_count; refund-aware: `is_reversal` subtracts from the corresponding total
 - **Admin Users** (owner-only, `require_role("owner")` on all endpoints):
   - `GET /admin/users` — lists all profiles; resolves `team_leader_id` → `team_leader_name`
   - `POST /admin/users` — creates a Supabase auth user via `supabase.auth.admin.create_user` (email_confirm=True, user_metadata.full_name), then PATCHes the profile with role/team/position/phone/team_leader_id; validates role is a staff role (not 'student')
@@ -269,8 +305,8 @@ edu-erp/
 - **MyTasks.jsx** — every logged-in user; shows tasks assigned to the current user; status workflow todo → in_progress → done; "+ New Personal Task" creates a self-assigned task with optional related student or candidate link.
 - **ManageTasks.jsx** — owner/manager/team_leader only; table of all tasks the current user can manage; "+ Assign Task" drawer with assignee dropdown populated from `GET /tasks/assignable-users` (scope-enforced so team_leader only sees their team), priority, due_date, Related To toggle (None/Student/Candidate with conditional searchable dropdown); edit, reassign, delete; status filter tabs. `/manage-tasks` route guarded.
 
-Fully working feature pages: Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees, Login, Staff, MyTasks, ManageTasks.
-Placeholders: Accounting, Dashboard. (Tasks.jsx old placeholder removed; replaced by MyTasks.jsx + ManageTasks.jsx.)
+Fully working feature pages: Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees, Login, Staff, MyTasks, ManageTasks, Accounting.
+Placeholders: Dashboard. (Tasks.jsx old placeholder removed; replaced by MyTasks.jsx + ManageTasks.jsx.)
 
 **Reusable components:** `EducationSelector.jsx`, `EmploymentSelector.jsx`, `AdmissionRoadmap.jsx`, `PlacementRoadmap.jsx`
 
@@ -323,11 +359,11 @@ Placeholders: Accounting, Dashboard. (Tasks.jsx old placeholder removed; replace
 
 **Partners & fees:**
 - `referral_partners` (uuid PK) — name (text NOT NULL), type (text CHECK IN ('firm','language_center','individual')), contact_person (text), phone (text), email (text), address (text), commission_basis (text CHECK IN ('percentage','fixed')), commission_rate (float), commission_currency (text default 'BDT'), notes (text), is_active (bool default true), created_at, updated_at.
-- `service_fees` (uuid PK) — direction (text CHECK IN ('incoming','outgoing') default 'incoming'), payer_type (text CHECK IN ('partner','student','other')), partner_id (uuid nullable FK → referral_partners), student_id (uuid nullable FK → students), candidate_id (uuid nullable FK → candidates), amount (float NOT NULL ≥ 0), currency (text default 'BDT'), milestone (text CHECK IN ('on_referral','on_coe','on_visa','on_enrollment','on_placement','custom')), description (text), status (text CHECK IN ('pending','invoiced','paid','cancelled') default 'pending'), due_date (date), paid_date (date), notes (text), created_at, updated_at. **Finance-RLS-gated: `can_view_accounting()` for select/insert/update; `can_delete()` for delete.**
+- `service_fees` (uuid PK) — direction (text CHECK IN ('incoming','outgoing') default 'incoming'), payer_type (text CHECK IN ('partner','student','other')), partner_id (uuid nullable FK → referral_partners), student_id (uuid nullable FK → students), candidate_id (uuid nullable FK → candidates), amount (float NOT NULL ≥ 0), currency (text default 'BDT'), milestone (text CHECK IN ('on_referral','on_coe','on_visa','on_enrollment','on_placement','custom')), description (text), status (text CHECK IN ('pending','invoiced','paid','cancelled') default 'pending'), due_date (date), paid_date (date), notes (text), **posted_transaction_id (uuid nullable FK → transactions ON DELETE SET NULL — set when status='paid' auto-posts; prevents double-posting; cleared on reversal)**, created_at, updated_at. **Finance-RLS-gated: `can_view_accounting()` for select/insert/update; `can_delete()` for delete.**
 
 **Accounting (finance-RLS-gated via `can_view_accounting()` — owner/manager/accountant only):**
 - `accounts` (int code PK) — **full chart of accounts seeded, codes 1000–6400** (assets, liabilities, equity, revenue, COGS, opex)
-- `transactions` — gateway-ready (Stripe/PayPal fields nullable until registered); debit/credit
+- `transactions` (uuid PK) — `txn_date` (date), `account_code` (int FK → accounts), `direction` (debit|credit — **auto-derived server-side from account_type; do NOT set from frontend**), `amount` (float), `currency` (text default 'BDT'), `description` (text), `reference` (text), `payment_method` (text), `student_id` (uuid nullable FK → students), `recorded_by` (uuid FK → profiles), **`is_reversal` (bool default false — flips derived direction AND subtracts from summary totals)**, `created_at`. Gateway fields (gateway_txn_id, gateway_ref, etc.) nullable placeholders for Stripe/PayPal.
 - `investments`, `commissions` — capital + consultant commission tracking
 
 **Task management:**
@@ -443,6 +479,20 @@ Keyed by **(country_id INT + industry_field_id INT)**, UNIQUE on the pair. Paral
   - **Pass 1:** Added router-level `Depends(get_current_user)` to every remaining feature router: `countries`, `qualification_types`, `industries`, `institutes`, `programs`, `employers`, `jobs`, `selector_education`, `selector_employment`, `students`, `candidates`, `student_progress`, `candidate_progress`, `admission_templates`, `placement_templates`, `inquiries`, `applications`, `job_applications`, `referral_partners`, `service_fees`. DELETE endpoints across all these routers additionally require `require_role("owner","manager")`. Verified: anonymous GETs return 401; owner token returns 200; owner DELETE returns 200; anonymous DELETE returns 401.
   - **Pass 2:** `service_fees.py` further restricted — all its endpoints require `require_role("owner","manager","accountant")` (finance gate); deletes still require owner/manager only. Verified with real negative test: counselor account → 403 on `/service-fees`, 200 on `/students`; owner → 200 on both.
   - Security enforcement model is now complete at the API layer. The pattern for new routers: every endpoint → `Depends(get_current_user)`; deletes → `Depends(require_role("owner","manager"))`; finance endpoints → `require_role("owner","manager","accountant")`.
+- ✅ **C14 — Accounting Phase 1 (manual ledger):**
+  - **Tables:** `accounts` (int code PK) and `transactions` already existed from `*_create_accounting.sql`. Chart of accounts seeded codes 1000–6400 (assets, liabilities, equity, revenue, COGS, opex).
+  - **Migration** `*_add_txn_is_reversal.sql`: adds `transactions.is_reversal` (bool default false); when true, direction is flipped AND the summary subtracts from the account-type's total.
+  - **`accounting.py` router** registered under `/api`; all endpoints `require_role("owner","manager","accountant")`: `GET /accounting/accounts`; `GET /accounting/transactions` (enriched with account_name + student_name); `POST /accounting/transactions` (direction auto-derived: revenue→credit, expense/cogs→debit; rejects non-postable accounts — asset/liability/equity and headers blocked HTTP 400); `PATCH` + `DELETE` by id; `GET /accounting/summary` (total_revenue, total_expenses, net, transaction_count; `is_reversal` flips direction and subtracts from totals).
+  - **Accounting model decision:** single-posting (NOT full double-entry). Users post to ONE account; the chosen account determines income vs. expense. Direction is never set manually by the user.
+  - **`TransactionCreate` / `TransactionUpdate`** Pydantic schemas added to `schemas.py`.
+  - **`Accounting.jsx`** replaces the placeholder page: finance-gated `/accounting` route; summary cards (Total Revenue green, Total Expenses red, Net); date-range + account + direction filters; transactions ledger with Effect labels (Income / Refund / Expense / Reversal); Add/Edit drawer (postable-account-only dropdown, amount, `is_reversal` "This is a refund/reversal" checkbox, description, reference, payment_method, optional related student); Chart of Accounts read-only tab (full hierarchy); BDT ৳ formatting.
+- ✅ **C15 — Accounting Phase 2 (auto-posting from service fees + fees-paid profile indicator):**
+  - **Migration** `*_add_service_fee_posted_txn.sql`: adds `service_fees.posted_transaction_id` (uuid FK → transactions ON DELETE SET NULL).
+  - **`_sync_fee_accounting(fee_row, current_user_id)`** helper in `service_fees.py`, wired into POST and PATCH:
+    - When `status` becomes `'paid'` AND `posted_transaction_id` is null → auto-create ONE revenue transaction: `account_code=4400` if `payer_type='partner'` else `4200`; direction credit; amount/currency from fee; `txn_date=paid_date or today`; `reference=f"service_fee:{fee.id}"`; `student_id` if present; `recorded_by=current_user`. Then sets `posted_transaction_id`.
+    - When `status != 'paid'` AND `posted_transaction_id` set → DELETE the linked transaction + clear `posted_transaction_id` (reversal). If already paid+posted → no-op (idempotent).
+  - **Fees-paid profile indicator:** `GET /students/{id}/fees-summary` and `GET /candidates/{id}/fees-summary` (finance-gated) return `{total_paid, total_pending, paid_count, pending_count, fees:[...]}`. `Students.jsx` and `Candidates.jsx` edit drawers show a "Fees" section for owner/manager/accountant only: green "Fees paid: ৳X" if total_paid > 0, amber "Pending: ৳X" if pending; hidden in add mode and for non-finance roles.
+  - **End-to-end verified:** pending→paid posts +amount to revenue and sets link; paid→pending reverses and removes txn; editing while paid does not duplicate.
 
 ---
 
@@ -484,7 +534,7 @@ git add supabase/migrations/ && git commit -m "..." && git push
 
 ## 10. Remaining Work (in order)
 
-1. **Task Management — later phases** (NEXT) — assigned tasks (phase 1, C12) is done. Remaining phases:
+1. **Task Management — later phases** — assigned tasks (phase 1, C12) is done. Remaining phases:
    - `profiles` extensions needed: `department_id` INT FK → departments (need a `departments` table for the 9 departments), `tier` text CHECK IN ('manager','team_leader','team_member'), `reports_to` uuid nullable self-ref FK → profiles. Also: `department_id` column on `daily_task_templates`.
    - **Fixed/daily task generation** — lazy-on-login approach recommended: when staff logs in, generate today's task instances from matching `daily_task_templates` (by department_id + tier) if not already present for today.
    - **Verification step** — add `verified_at` timestamptz (or `is_verified` bool) to task instances; staff must explicitly verify; unverified ≠ done even after `end_time` passes.
@@ -492,15 +542,28 @@ git add supabase/migrations/ && git commit -m "..." && git push
    - **Escalation notifications** — write to `notifications` table (recipient_id, type, related_task_id, is_read) escalating up `reports_to` chain: staff → team_leader → manager → owner.
    - Full design in §10A.
 
-2. **Wire `assigned_counselor` / `created_by`** into feature routers and schemas. All feature routers are now auth-gated; `get_current_user()` is already available on every endpoint. When creating a student/candidate/inquiry/application: populate `created_by` from `get_current_user().id`. When assigning: populate `assigned_counselor` from chosen user's ID. FK columns already exist in DB but are omitted from all schemas and forms.
+2. **Language Course Track** (next major feature — prerequisite Accounting Phase 2 is DONE as of C15). Build in order:
+   - **(a)** `course_students` table + `courses` table + course registration page (fee amount collected → auto-post to accounting revenue account 4300 or similar)
+   - **(b)** `batches` + `batch_enrollments` tables; per-student payment status UI
+   - **(c)** `instructors` + `instructor_engagements` + `instructor_payments` tables; expense auto-post when payment status→'paid'
+   - **(d)** Owner finance command-center dashboard (aggregates pending course fees, service fees, instructor payments, income/expense summary)
+   - **(e)** Course lead funnel: extend `interest_track` CHECK to include `'language_course'`; add `POST /inquiries/{id}/convert-course-student` endpoint
+   - **(f)** Japan language-school roadmap template (from §14 Component 8 Phase 1–4 workflow), attached to course students via the existing process-template pattern
+   - Full spec in §14.
 
-3. **Deferred checklists** — `application_checklist` and `job_application_checklist` tables already exist. Goals: (a) seed items from `admission_requirements` when a new application is created; (b) tick-off UI in Applications Kanban drawer; (c) mirror for job applications.
+3. **Wire `assigned_counselor` / `created_by`** into feature routers and schemas. All feature routers are now auth-gated; `get_current_user()` is already available on every endpoint. When creating a student/candidate/inquiry/application: populate `created_by` from `get_current_user().id`. When assigning: populate `assigned_counselor` from chosen user's ID. FK columns already exist in DB but are omitted from all schemas and forms.
 
-4. **Accounting UI, Dashboards** — see §13 for planned feature specs (PF-3: Accounting Core; PF-2: Service Fee paid→ledger posting).
+4. **Deferred checklists** — `application_checklist` and `job_application_checklist` tables already exist. Goals: (a) seed items from `admission_requirements` when a new application is created; (b) tick-off UI in Applications Kanban drawer; (c) mirror for job applications.
 
-5. **Backend search endpoints for Students/Candidates** — client-side search (`lib/search.js`) is fine for hundreds of records. If data grows large, add `?q=` to the GET endpoints.
+5. **Marketing + company expense pages** — marketing page auto-posts expense entries to accounting on save; company expense page requires file upload (receipts) → needs pluggable file storage (Supabase Storage or Google Drive API).
 
-6. **Google Drive document integration** (service-account), then **Render deployment**. Render server needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as env vars; frontend build needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time env vars.
+6. **Apply-tab restructure** (PF-1) — see §13. Move `EducationSelector` + `AdmissionRoadmap` from Student profile into the Application record; same for Employment track. A student may have multiple applications; the application becomes the unit of work.
+
+7. **Backend search endpoints for Students/Candidates** — client-side search (`lib/search.js`) is fine for hundreds of records. If data grows large, add `?q=` to the GET endpoints.
+
+8. **Security hardening pass** before go-live — per-row visibility for counselors (`assigned_counselor` filter on students/candidates endpoints), rate limiting, input sanitization audit.
+
+9. **Google Drive document integration** (service-account), then **Render deployment**. Render server needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET` as env vars; frontend build needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time env vars.
 
 ---
 
@@ -689,22 +752,38 @@ This template is to be filled in **with department leads when staff are onboarde
 
 ## 12. Immediate Next Step
 
-**Task Management — later phases.** Assigned tasks (phase 1, C12) and API security enforcement (C13) are both done. Next is the fixed/daily task system, which requires schema extensions first.
+**Accounting Phases 1 and 2 (C14, C15) are complete.** Two paths are ready:
 
-**Step 1 — Schema extensions:**
-- Create `departments` table (9 rows; id int PK, name text, label text)
-- Add to `profiles`: `department_id` INT FK → departments, `tier` text CHECK IN ('manager','team_leader','team_member'), `reports_to` uuid nullable FK → profiles
-- Add `department_id` to `daily_task_templates`
-- Update Staff page to let owner assign `department_id` + `tier` when creating/editing staff
+---
 
-**Step 2 — Fixed task generation (lazy-on-login):**
-- On login, query `daily_task_templates` WHERE `department_id` = current user's dept AND `tier` = current user's tier AND `is_active = true`
-- Insert task instances for today if not already present (check by `assigned_to + template_id + date`)
-- These show in the "Today's Fixed Tasks" section (planned dashboard widget)
+**Option A — Language Course Track** (recommended — highest immediate business value):
 
-**Step 3 — Verification, flagging, escalation** (see §10A for full spec).
+Step 1 — Migrations:
+- Create `course_students` table: demographics (name, DOB, phone, email, address), status, `converted_student_id` (uuid nullable FK → students), `converted_candidate_id` (uuid nullable FK → candidates), referred_by_partner_id, created_at
+- Create `courses` table: name, default_fee (float), currency (default BDT), description, is_active
 
-> **Before starting:** ensure all three terminals are running; `curl http://127.0.0.1:8000/api/tasks/mine` (with a valid JWT) returns a list.
+Step 2 — Routers:
+- `course_students.py` + `courses.py` + course registration endpoint that auto-posts the fee to accounting revenue on payment
+
+Step 3 — Frontend:
+- Course Students page (list + add/edit drawer)
+- Course Registration form (enrol student into course/batch; collect fee; trigger auto-post)
+
+Then continue through batches → instructors → dashboard (see §10 item 2 for full sequence; §14 for full spec).
+
+---
+
+**Option B — Task Management later phases:**
+
+Step 1 — Schema extensions: create `departments` table (9 rows); add `department_id`, `tier`, `reports_to` to `profiles`; add `department_id` to `daily_task_templates`.
+
+Step 2 — Fixed-task generation (lazy-on-login from matching templates).
+
+Step 3 — Verification, flagging, escalation (see §10A for full spec).
+
+---
+
+> **Before starting either path:** ensure all three terminals are running; `curl http://127.0.0.1:8000/api/accounting/summary` (with owner JWT) → returns `{total_revenue, total_expenses, net, ...}`.
 
 ---
 
@@ -713,6 +792,10 @@ This template is to be filled in **with department leads when staff are onboarde
 ## 13. PLANNED FEATURES (not yet built)
 
 Requirements captured only — no code written. Do NOT implement unless explicitly requested.
+
+> **✅ PF-3 (Accounting Core) — DONE as C14.** Manual ledger, chart of accounts UI, transactions CRUD, summary endpoint, `Accounting.jsx` page fully working.
+>
+> **✅ PF-2 (Service Fee "Paid" → Profile Indicator + Accounting Integration) — DONE as C15.** Auto-posting via `_sync_fee_accounting`; `posted_transaction_id` link; fees-paid indicator on student/candidate profiles for finance roles.
 
 ---
 
@@ -737,38 +820,6 @@ Requirements captured only — no code written. Do NOT implement unless explicit
 - Applications gain a richer detail view (selector + roadmap embedded there).
 
 ---
-
-### PF-2: Service Fee "Paid" → Profile Indicator + Accounting Integration
-
-**Trigger:** When a `service_fee` record's `status` transitions to `'paid'`.
-
-**Requirements:**
-
-**PF-2a — Profile indicator (independent):** Show a visible "paid" badge on the linked student's or candidate's profile card/drawer. Read-only display; no edit flow needed here.
-
-**PF-2b — Accounting ledger posting (depends on PF-3):** Automatically post the paid amount as a transaction in the `transactions` table when status becomes `'paid'`. Logic lives in the `service_fees` PATCH endpoint.
-- Direction: incoming (revenue) for standard service fees.
-- Map to an appropriate revenue account in the existing chart of accounts (codes 1000–6400).
-
-**Dependency:** PF-3 must be built before PF-2b can be implemented. PF-2a can be built independently.
-
----
-
-### PF-3: Accounting Core
-
-**Purpose:** A working accounting ledger — tracking income and expenses. Replaces the current `Accounting.jsx` placeholder page.
-
-**Access:** Finance-gated — owner, manager, accountant only (same as `service_fees` and existing accounting tables).
-
-**Requirements:**
-- **Transactions list / ledger UI** — filterable by account code, date range, direction (incoming/outgoing), status.
-- **Chart of accounts** already seeded (codes 1000–6400: assets, liabilities, equity, revenue, COGS, opex) — use as-is; display in a sidebar or filter dropdown.
-- **Manual transaction entry** — debit/credit against a chart-of-accounts code; amount + currency; description; date; optional document reference.
-- **Income sources:** paid service fees (auto-posted via PF-2b); manual revenue entries.
-- **Expense sources:** marketing expenses, company expenses — manual entries.
-- **`transactions` table** already exists in DB (gateway-ready with nullable Stripe/PayPal fields) — use it.
-- **`investments` and `commissions` tables** also exist — surface when ready (can be phase 2 of this feature).
-- The Accounting nav link in `Layout.jsx` already exists — replace the placeholder page with the real implementation.
 
 ---
 
@@ -842,7 +893,7 @@ The accounting plumbing for the course track works as follows:
 
 Every posting must carry metadata: `course_student_id` / `batch_id` for fee postings; `instructor_id` / `engagement_id` for expense postings. This allows the owner to drill down into what drove each accounting entry.
 
-**Dependency note:** this auto-posting plumbing is the same mechanism needed for `service_fees` (PF-2b). Build the shared auto-posting infrastructure first (see Build Sequence below — Step 0).
+**Dependency note:** this auto-posting plumbing uses the same `transactions` table and pattern as the `service_fees` auto-posting (C15 — already done). No additional infrastructure is needed before building course money-flows.
 
 ---
 
@@ -950,20 +1001,20 @@ Once accepted, collect and translate all required documents for the Certificate 
 
 ### Recommended Build Sequence
 
-> **Step 0 (build FIRST — prerequisite):** Accounting Phase 2 — **Auto-posting infrastructure.** When a `service_fee` is marked `'paid'`, auto-create a revenue transaction in `transactions` AND optionally mark the linked student/candidate record. This shared auto-posting plumbing underpins ALL course money-flows (course fees in, instructor payments out, pending finance dashboard). Build before any course features.
+> ~~**Step 0 (build FIRST — prerequisite):** Accounting Phase 2 — **Auto-posting infrastructure.**~~ ✅ **DONE (C15).** The `_sync_fee_accounting` helper, `posted_transaction_id` link on `service_fees`, and revenue auto-posting are complete. Course fee and instructor-payment postings will reuse the same `transactions` table and the same auto-post pattern established in C15.
 
 **Then, in order:**
 
 | Step | What to build | Notes |
 |---|---|---|
-| (a) | Course Student entity (`course_students`) + Courses (`courses`) + Registration page (fee → accounting) | Needs Step 0 for auto-posting |
+| (a) | Course Student entity (`course_students`) + Courses (`courses`) + Registration page (fee → accounting) | Step 0 auto-posting DONE (C15) |
 | (b) | Batches (`batches` + `batch_enrollments`) + per-student payment status | Depends on (a) |
-| (c) | Contract Instructors (`instructors` + `instructor_engagements` + `instructor_payments`) → accounting expense | Needs Step 0 for auto-posting |
+| (c) | Contract Instructors (`instructors` + `instructor_engagements` + `instructor_payments`) → accounting expense | Step 0 auto-posting DONE (C15) |
 | (d) | Owner finance command-center / dashboard (pending in/out, income/expense summary) | Aggregates accounting + service_fees + course fees + instructor payments; build after (a)–(c) |
 | (e) | Course lead funnel: extend `inquiries.interest_track` to include `'language_course'`; add course-inquiry → course-student conversion endpoint | Reuses existing inquiry infrastructure |
 | (f) | Japan language-course roadmap template (from the Phase 1–4 workflow in Component 8) attached to course students; reuse the admission/placement template pattern | |
 
-**Key dependency chain:** Step 0 (auto-posting) → (a) course fees post as revenue → (c) instructor payments post as expense → (d) dashboard aggregates all of the above.
+**Key dependency chain:** ~~Step 0 (auto-posting)~~ ✅ DONE → (a) course fees post as revenue → (c) instructor payments post as expense → (d) dashboard aggregates all of the above.
 
 ---
 
