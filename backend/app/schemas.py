@@ -706,6 +706,7 @@ class BatchCreate(BaseModel):
     end_date: Optional[str] = None
     status: Optional[str] = "planned"
     notes: Optional[str] = None
+    instructor_id: Optional[str] = None
 
 
 class BatchUpdate(BaseModel):
@@ -715,6 +716,7 @@ class BatchUpdate(BaseModel):
     end_date: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    instructor_id: Optional[str] = None
 
 
 # ── Course Payments ───────────────────────────────────────────────────────────
@@ -734,3 +736,45 @@ class CoursePaymentUpdate(BaseModel):
     payment_method: Optional[str] = None
     reference: Optional[str] = None
     notes: Optional[str] = None
+
+
+# ── Instructors ───────────────────────────────────────────────────────────────
+
+class InstructorCreate(BaseModel):
+    full_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    specialization: Optional[str] = None
+    rate_note: Optional[str] = None
+    is_active: Optional[bool] = True
+    notes: Optional[str] = None
+
+
+class InstructorUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    specialization: Optional[str] = None
+    rate_note: Optional[str] = None
+    is_active: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+class InstructorPaymentCreate(BaseModel):
+    amount: float
+    payment_date: Optional[str] = None
+    payment_method: Optional[str] = None
+    reference: Optional[str] = None
+    notes: Optional[str] = None
+    batch_id: Optional[str] = None
+    currency: Optional[str] = None
+
+
+class InstructorPaymentUpdate(BaseModel):
+    amount: Optional[float] = None
+    payment_date: Optional[str] = None
+    payment_method: Optional[str] = None
+    reference: Optional[str] = None
+    notes: Optional[str] = None
+    batch_id: Optional[str] = None
+    currency: Optional[str] = None

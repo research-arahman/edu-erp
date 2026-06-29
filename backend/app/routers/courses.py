@@ -82,6 +82,12 @@ def list_batches(course_id: Optional[str] = None):
         c_res = supabase.table("courses").select("id,name").in_("id", course_ids_for_batches).execute()
         course_map = {c["id"]: c["name"] for c in c_res.data}
 
+    instructor_ids_for_batches = list({b["instructor_id"] for b in batches if b.get("instructor_id")})
+    instructor_map: dict = {}
+    if instructor_ids_for_batches:
+        i_res = supabase.table("instructors").select("id,full_name").in_("id", instructor_ids_for_batches).execute()
+        instructor_map = {i["id"]: i["full_name"] for i in i_res.data}
+
     batch_ids = [b["id"] for b in batches]
     enr_res = (
         supabase.table("course_enrollments")
@@ -95,6 +101,7 @@ def list_batches(course_id: Optional[str] = None):
 
     for b in batches:
         b["course_name"] = course_map.get(b.get("course_id"))
+        b["instructor_name"] = instructor_map.get(b.get("instructor_id"))
         b["student_count"] = count_map.get(b["id"], 0)
 
     return batches
@@ -116,6 +123,15 @@ def get_batch(batch_id: str, current_user: dict = Depends(get_current_user)):
                 batch["course_name"] = c_res.data[0]["name"]
     except Exception:
         batch.setdefault("course_name", None)
+
+    try:
+        if batch.get("instructor_id"):
+            i_res = supabase.table("instructors").select("full_name").eq("id", batch["instructor_id"]).execute()
+            batch["instructor_name"] = i_res.data[0]["full_name"] if i_res.data else None
+        else:
+            batch["instructor_name"] = None
+    except Exception:
+        batch.setdefault("instructor_name", None)
 
     try:
         enr_res = (
@@ -200,10 +216,18 @@ def create_batch(body: BatchCreate):
         raise HTTPException(status_code=400, detail="Course not found")
     course_name = c_res.data[0]["name"]
 
+    instructor_name = None
+    if body.instructor_id is not None:
+        i_res = supabase.table("instructors").select("id,full_name").eq("id", body.instructor_id).execute()
+        if not i_res.data:
+            raise HTTPException(status_code=400, detail="Instructor not found")
+        instructor_name = i_res.data[0]["full_name"]
+
     payload = body.model_dump(exclude_none=True)
     result = supabase.table("batches").insert(payload).execute()
     batch = result.data[0]
     batch["course_name"] = course_name
+    batch["instructor_name"] = instructor_name
     batch["student_count"] = 0
     return batch
 
@@ -217,6 +241,10 @@ def update_batch(batch_id: str, body: BatchUpdate):
         c_res = supabase.table("courses").select("id").eq("id", payload["course_id"]).execute()
         if not c_res.data:
             raise HTTPException(status_code=400, detail="Course not found")
+    if "instructor_id" in payload and payload["instructor_id"] is not None:
+        i_res = supabase.table("instructors").select("id").eq("id", payload["instructor_id"]).execute()
+        if not i_res.data:
+            raise HTTPException(status_code=400, detail="Instructor not found")
     result = supabase.table("batches").update(payload).eq("id", batch_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Batch not found")
@@ -226,6 +254,11 @@ def update_batch(batch_id: str, body: BatchUpdate):
             c_res = supabase.table("courses").select("name").eq("id", batch["course_id"]).execute()
             if c_res.data:
                 batch["course_name"] = c_res.data[0]["name"]
+        if batch.get("instructor_id"):
+            i_res = supabase.table("instructors").select("full_name").eq("id", batch["instructor_id"]).execute()
+            batch["instructor_name"] = i_res.data[0]["full_name"] if i_res.data else None
+        else:
+            batch["instructor_name"] = None
         enr_count = (
             supabase.table("course_enrollments")
             .select("id", count="exact")

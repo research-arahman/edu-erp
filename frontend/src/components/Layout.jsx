@@ -53,6 +53,7 @@ const NAV = [
       { to: '/courses',         label: 'Courses' },
       { to: '/course-students', label: 'Course Students' },
       { to: '/batches',         label: 'Batches' },
+      { to: '/instructors',     label: 'Instructors' },
     ],
   },
   {

@@ -28,6 +28,7 @@ import Staff from './pages/Staff';
 import Courses from './pages/Courses';
 import CourseStudents from './pages/CourseStudents';
 import Batches from './pages/Batches';
+import Instructors from './pages/Instructors';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -86,6 +87,7 @@ function AppRoutes() {
           <Route path="courses" element={<Courses />} />
           <Route path="course-students" element={<CourseStudents />} />
           <Route path="batches" element={<Batches />} />
+          <Route path="instructors" element={<Instructors />} />
           <Route
             path="staff"
             element={user?.role === 'owner' ? <Staff /> : <Navigate to="/" replace />}

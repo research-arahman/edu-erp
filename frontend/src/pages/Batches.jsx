@@ -19,12 +19,13 @@ const PAYMENT_PALETTE = {
 };
 
 const EMPTY_FORM = {
-  course_id:  '',
-  name:       '',
-  start_date: '',
-  end_date:   '',
-  status:     'planned',
-  notes:      '',
+  course_id:     '',
+  name:          '',
+  start_date:    '',
+  end_date:      '',
+  status:        'planned',
+  instructor_id: '',
+  notes:         '',
 };
 
 const INPUT =
@@ -80,6 +81,7 @@ export default function Batches() {
 
   const [batches,       setBatches]       = useState([]);
   const [courses,       setCourses]       = useState([]);
+  const [instructors,   setInstructors]   = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState(null);
   const [filterCourse,  setFilterCourse]  = useState('');
@@ -104,8 +106,8 @@ export default function Batches() {
   }
 
   useEffect(() => {
-    Promise.all([api.get('/courses'), api.get('/batches')])
-      .then(([cs, bs]) => { setCourses(cs); setBatches(bs); })
+    Promise.all([api.get('/courses'), api.get('/batches'), api.get('/instructors')])
+      .then(([cs, bs, is_]) => { setCourses(cs); setBatches(bs); setInstructors(is_); })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -168,9 +170,10 @@ export default function Batches() {
     setFormError(null);
     try {
       const payload = { course_id: form.course_id, name: form.name.trim(), status: form.status };
-      if (form.start_date)   payload.start_date = form.start_date;
-      if (form.end_date)     payload.end_date   = form.end_date;
-      if (form.notes.trim()) payload.notes      = form.notes.trim();
+      if (form.start_date)     payload.start_date    = form.start_date;
+      if (form.end_date)       payload.end_date      = form.end_date;
+      if (form.notes.trim())   payload.notes         = form.notes.trim();
+      payload.instructor_id = form.instructor_id || null;
       await api.post('/batches', payload);
       await loadBatches(filterCourse);
       closePanel();
@@ -197,11 +200,12 @@ export default function Batches() {
 
   function startEdit() {
     setEditForm({
-      name:       detailData?.name       ?? '',
-      start_date: detailData?.start_date ?? '',
-      end_date:   detailData?.end_date   ?? '',
-      status:     detailData?.status     ?? 'planned',
-      notes:      detailData?.notes      ?? '',
+      name:          detailData?.name          ?? '',
+      start_date:    detailData?.start_date    ?? '',
+      end_date:      detailData?.end_date      ?? '',
+      status:        detailData?.status        ?? 'planned',
+      instructor_id: detailData?.instructor_id ?? '',
+      notes:         detailData?.notes         ?? '',
     });
     setEditError(null);
     setEditMode(true);
@@ -223,11 +227,12 @@ export default function Batches() {
     setEditError(null);
     try {
       const payload = {
-        name:       editForm.name.trim(),
-        status:     editForm.status,
-        start_date: editForm.start_date || null,
-        end_date:   editForm.end_date   || null,
-        notes:      editForm.notes.trim() || null,
+        name:          editForm.name.trim(),
+        status:        editForm.status,
+        start_date:    editForm.start_date    || null,
+        end_date:      editForm.end_date      || null,
+        notes:         editForm.notes.trim()  || null,
+        instructor_id: editForm.instructor_id || null,
       };
       const updated = await api.patch(`/batches/${selected.id}`, payload);
       setDetailData((prev) => ({ ...prev, ...updated }));
@@ -300,7 +305,7 @@ export default function Batches() {
             <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Batch Name', 'Course', 'Start Date', 'Status', 'Students', ''].map((col) => (
+                  {['Batch Name', 'Course', 'Instructor', 'Start Date', 'Status', 'Students', ''].map((col) => (
                     <th
                       key={col}
                       className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
@@ -313,7 +318,7 @@ export default function Batches() {
               <tbody className="divide-y divide-gray-100">
                 {batches.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-16 text-center text-sm text-gray-400">
+                    <td colSpan={7} className="px-5 py-16 text-center text-sm text-gray-400">
                       No batches yet — add one above.
                     </td>
                   </tr>
@@ -326,6 +331,7 @@ export default function Batches() {
                     >
                       <td className="px-5 py-3 font-medium text-gray-900">{batch.name}</td>
                       <td className="px-5 py-3 text-gray-600">{batch.course_name ?? '—'}</td>
+                      <td className="px-5 py-3 text-gray-600">{batch.instructor_name ?? '—'}</td>
                       <td className="px-5 py-3 text-gray-600">{batch.start_date ?? '—'}</td>
                       <td className="px-5 py-3"><StatusBadge status={batch.status} /></td>
                       <td className="px-5 py-3 font-medium text-gray-700">{batch.student_count ?? 0}</td>
@@ -439,6 +445,23 @@ export default function Batches() {
                   </select>
                 </Field>
 
+                <Field label="Instructor (optional)">
+                  <select
+                    className={INPUT}
+                    name="instructor_id"
+                    value={form.instructor_id}
+                    onChange={handleChange}
+                    disabled={saving}
+                  >
+                    <option value="">— none —</option>
+                    {instructors.filter((i) => i.is_active).map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.full_name}{i.specialization ? ` (${i.specialization})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
                 <Field label="Notes">
                   <textarea
                     className={INPUT}
@@ -525,6 +548,9 @@ export default function Batches() {
                           <div className="flex items-center gap-2">
                             <StatusBadge status={detailData.status} />
                             <span className="text-xs text-gray-500">{detailData.course_name ?? '—'}</span>
+                            {detailData.instructor_name && (
+                              <span className="text-xs text-indigo-600">· {detailData.instructor_name}</span>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
                             {detailData.start_date && <span>Start: {detailData.start_date}</span>}
@@ -592,6 +618,22 @@ export default function Batches() {
                             <option value="running">Running</option>
                             <option value="completed">Completed</option>
                             <option value="cancelled">Cancelled</option>
+                          </select>
+                        </Field>
+                        <Field label="Instructor (optional)">
+                          <select
+                            className={INPUT}
+                            name="instructor_id"
+                            value={editForm.instructor_id}
+                            onChange={handleEditChange}
+                            disabled={editSaving}
+                          >
+                            <option value="">— none —</option>
+                            {instructors.map((i) => (
+                              <option key={i.id} value={i.id}>
+                                {i.full_name}{i.specialization ? ` (${i.specialization})` : ''}
+                              </option>
+                            ))}
                           </select>
                         </Field>
                         <Field label="Notes">
