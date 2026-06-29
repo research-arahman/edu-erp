@@ -683,6 +683,7 @@ class EnrollmentCreate(BaseModel):
     enrollment_date: Optional[str] = None
     status: Optional[str] = "enrolled"
     notes: Optional[str] = None
+    batch_id: Optional[str] = None
 
 
 class EnrollmentUpdate(BaseModel):
@@ -692,6 +693,27 @@ class EnrollmentUpdate(BaseModel):
     status: Optional[str] = None
     payment_status: Optional[str] = None
     enrollment_date: Optional[str] = None
+    notes: Optional[str] = None
+    batch_id: Optional[str] = None
+
+
+# ── Batches ───────────────────────────────────────────────────────────────────
+
+class BatchCreate(BaseModel):
+    course_id: str
+    name: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    status: Optional[str] = "planned"
+    notes: Optional[str] = None
+
+
+class BatchUpdate(BaseModel):
+    course_id: Optional[str] = None
+    name: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    status: Optional[str] = None
     notes: Optional[str] = None
 
 

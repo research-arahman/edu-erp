@@ -22,6 +22,7 @@ const EMPTY_ENROLL = {
   course_id:       '',
   agreed_fee:      '',
   enrollment_date: '',
+  batch_id:        '',
 };
 
 function emptyPayForm() {
@@ -113,6 +114,8 @@ export default function CourseStudents() {
   const [converting,     setConverting]     = useState(null); // null | 'student' | 'candidate'
   const [convertError,   setConvertError]   = useState(null);
 
+  const [batchesByCourse, setBatchesByCourse] = useState({});
+
   // ── data loading ────────────────────────────────────────────────────────────
 
   function loadStudents() {
@@ -123,6 +126,16 @@ export default function CourseStudents() {
     const fresh = await api.get(`/course-students/${id}`);
     setSelected(fresh);
     setStudents((prev) => prev.map((s) => (s.id === fresh.id ? fresh : s)));
+  }
+
+  async function fetchBatchesForCourse(courseId) {
+    if (!courseId || batchesByCourse[courseId]) return;
+    try {
+      const batches = await api.get(`/batches?course_id=${courseId}`);
+      setBatchesByCourse((prev) => ({ ...prev, [courseId]: batches }));
+    } catch {
+      // fail silently — batch dropdown stays empty
+    }
   }
 
   useEffect(() => {
@@ -209,7 +222,12 @@ export default function CourseStudents() {
 
   function handleEnrollChange(e) {
     const { name, value } = e.target;
-    setEnroll((prev) => ({ ...prev, [name]: value }));
+    if (name === 'course_id') {
+      setEnroll((prev) => ({ ...prev, course_id: value, batch_id: '' }));
+      if (value) fetchBatchesForCourse(value);
+    } else {
+      setEnroll((prev) => ({ ...prev, [name]: value }));
+    }
   }
 
   async function handleSubmit(e) {
@@ -251,6 +269,7 @@ export default function CourseStudents() {
       const payload = { course_id: enroll.course_id };
       if (enroll.agreed_fee !== '')      payload.agreed_fee      = Number(enroll.agreed_fee);
       if (enroll.enrollment_date)        payload.enrollment_date = enroll.enrollment_date;
+      payload.batch_id = enroll.batch_id || null;
       await api.post(`/course-students/${selected.id}/enrollments`, payload);
       await refetchSelected(selected.id);
       setEnroll(EMPTY_ENROLL);
@@ -289,8 +308,10 @@ export default function CourseStudents() {
       payment_status:  enr.payment_status  ?? 'pending',
       enrollment_date: enr.enrollment_date ?? '',
       notes:           enr.notes           ?? '',
+      batch_id:        enr.batch_id        ?? '',
     });
     setEditEnrError(null);
+    if (enr.course_id) fetchBatchesForCourse(enr.course_id);
   }
 
   function cancelEditEnr() {
@@ -301,7 +322,12 @@ export default function CourseStudents() {
 
   function handleEditEnrChange(e) {
     const { name, value } = e.target;
-    setEditEnrForm((prev) => ({ ...prev, [name]: value }));
+    if (name === 'course_id') {
+      setEditEnrForm((prev) => ({ ...prev, course_id: value, batch_id: '' }));
+      if (value) fetchBatchesForCourse(value);
+    } else {
+      setEditEnrForm((prev) => ({ ...prev, [name]: value }));
+    }
   }
 
   async function handleSaveEnr(enrollmentId) {
@@ -316,7 +342,8 @@ export default function CourseStudents() {
       };
       if (editEnrForm.agreed_fee !== '') payload.agreed_fee = Number(editEnrForm.agreed_fee);
       if (editEnrForm.enrollment_date)   payload.enrollment_date = editEnrForm.enrollment_date;
-      payload.notes = editEnrForm.notes.trim() || null;
+      payload.notes    = editEnrForm.notes.trim() || null;
+      payload.batch_id = editEnrForm.batch_id || null;
       await api.patch(`/enrollments/${enrollmentId}`, payload);
       await refetchSelected(selected.id);
       cancelEditEnr();
@@ -790,9 +817,16 @@ export default function CourseStudents() {
                             {/* Row */}
                             <div className="flex items-center gap-2 px-3 py-2.5">
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-gray-800">
-                                  {enr.course_name ?? '—'}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <p className="truncate text-sm font-medium text-gray-800">
+                                    {enr.course_name ?? '—'}
+                                  </p>
+                                  {enr.batch_name && (
+                                    <span className="inline-block rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-600">
+                                      {enr.batch_name}
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-gray-500">
                                   {fmt(enr.agreed_fee, enr.currency)}
                                 </p>
@@ -876,6 +910,22 @@ export default function CourseStudents() {
                                     {courses.map((c) => (
                                       <option key={c.id} value={c.id}>
                                         {c.name} — {fmt(c.default_fee, c.currency)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </Field>
+                                <Field label="Batch (optional)">
+                                  <select
+                                    className={INPUT}
+                                    name="batch_id"
+                                    value={editEnrForm.batch_id}
+                                    onChange={handleEditEnrChange}
+                                    disabled={editEnrSaving || !editEnrForm.course_id}
+                                  >
+                                    <option value="">— no batch —</option>
+                                    {(batchesByCourse[editEnrForm.course_id] ?? []).map((b) => (
+                                      <option key={b.id} value={b.id}>
+                                        {b.name}{b.start_date ? ` (${b.start_date})` : ''}
                                       </option>
                                     ))}
                                   </select>
@@ -1154,6 +1204,23 @@ export default function CourseStudents() {
                               {c.name} — {fmt(c.default_fee, c.currency)}
                             </option>
                           ))}
+                      </select>
+                    </Field>
+
+                    <Field label="Batch (optional)">
+                      <select
+                        className={INPUT}
+                        name="batch_id"
+                        value={enroll.batch_id}
+                        onChange={handleEnrollChange}
+                        disabled={enrolling || !enroll.course_id}
+                      >
+                        <option value="">— no batch —</option>
+                        {(batchesByCourse[enroll.course_id] ?? []).map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}{b.start_date ? ` (${b.start_date})` : ''}
+                          </option>
+                        ))}
                       </select>
                     </Field>
 

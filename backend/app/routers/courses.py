@@ -12,6 +12,7 @@ from app.schemas import (
     CourseStudentCreate, CourseStudentUpdate,
     EnrollmentCreate, EnrollmentUpdate,
     CoursePaymentCreate, CoursePaymentUpdate,
+    BatchCreate, BatchUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,192 @@ def delete_course(course_id: str):
     return result.data[0]
 
 
+# ── BATCHES ───────────────────────────────────────────────────────────────────
+
+@router.get("/batches")
+def list_batches(course_id: Optional[str] = None):
+    q = supabase.table("batches").select("*")
+    if course_id:
+        q = q.eq("course_id", course_id)
+    result = (
+        q.order("start_date", desc=True, nullsfirst=False)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    batches = result.data or []
+    if not batches:
+        return batches
+
+    course_ids_for_batches = list({b["course_id"] for b in batches if b.get("course_id")})
+    course_map: dict = {}
+    if course_ids_for_batches:
+        c_res = supabase.table("courses").select("id,name").in_("id", course_ids_for_batches).execute()
+        course_map = {c["id"]: c["name"] for c in c_res.data}
+
+    batch_ids = [b["id"] for b in batches]
+    enr_res = (
+        supabase.table("course_enrollments")
+        .select("batch_id")
+        .in_("batch_id", batch_ids)
+        .execute()
+    )
+    count_map: dict = defaultdict(int)
+    for e in (enr_res.data or []):
+        count_map[e["batch_id"]] += 1
+
+    for b in batches:
+        b["course_name"] = course_map.get(b.get("course_id"))
+        b["student_count"] = count_map.get(b["id"], 0)
+
+    return batches
+
+
+@router.get("/batches/{batch_id}")
+def get_batch(batch_id: str, current_user: dict = Depends(get_current_user)):
+    is_finance = current_user.get("role") in ("owner", "manager", "accountant")
+
+    batch_res = supabase.table("batches").select("*").eq("id", batch_id).execute()
+    if not batch_res.data:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    batch = batch_res.data[0]
+
+    try:
+        if batch.get("course_id"):
+            c_res = supabase.table("courses").select("name").eq("id", batch["course_id"]).execute()
+            if c_res.data:
+                batch["course_name"] = c_res.data[0]["name"]
+    except Exception:
+        batch.setdefault("course_name", None)
+
+    try:
+        enr_res = (
+            supabase.table("course_enrollments")
+            .select("*")
+            .eq("batch_id", batch_id)
+            .execute()
+        )
+        enrollments = enr_res.data or []
+
+        student_ids = list({e["course_student_id"] for e in enrollments if e.get("course_student_id")})
+        student_map: dict = {}
+        if student_ids:
+            s_res = (
+                supabase.table("course_students")
+                .select("id,full_name,phone")
+                .in_("id", student_ids)
+                .execute()
+            )
+            student_map = {s["id"]: s for s in s_res.data}
+
+        enrollment_ids = [e["id"] for e in enrollments]
+        payment_totals: dict = defaultdict(float)
+        if enrollment_ids:
+            pmts_res = (
+                supabase.table("course_payments")
+                .select("enrollment_id,amount")
+                .in_("enrollment_id", enrollment_ids)
+                .execute()
+            )
+            for p in (pmts_res.data or []):
+                payment_totals[p["enrollment_id"]] += float(p.get("amount") or 0)
+
+        roster = []
+        for enr in enrollments:
+            cs_id = enr.get("course_student_id")
+            cs = student_map.get(cs_id, {})
+            eid = enr["id"]
+            agreed_fee = float(enr.get("agreed_fee") or 0)
+            total_paid = payment_totals.get(eid, 0.0)
+            remaining = max(0.0, agreed_fee - total_paid)
+
+            row: dict = {
+                "course_student_id": cs_id,
+                "course_student_name": cs.get("full_name"),
+                "course_student_phone": cs.get("phone"),
+                "enrollment_id": eid,
+                "currency": enr.get("currency"),
+                "status": enr.get("status"),
+                "payment_status": enr.get("payment_status"),
+                "agreed_fee": agreed_fee if is_finance else None,
+                "total_paid": total_paid if is_finance else None,
+                "remaining": remaining if is_finance else None,
+            }
+            roster.append(row)
+
+        roster_total_fees = sum(float(e.get("agreed_fee") or 0) for e in enrollments)
+        roster_total_paid = sum(payment_totals.values())
+        roster_total_remaining = max(0.0, roster_total_fees - roster_total_paid)
+
+        batch["roster"] = roster
+        batch["headcount"] = len(roster)
+        batch["roster_total_fees"] = roster_total_fees if is_finance else None
+        batch["roster_total_paid"] = roster_total_paid if is_finance else None
+        batch["roster_total_remaining"] = roster_total_remaining if is_finance else None
+
+    except Exception as exc:
+        logger.warning("Roster enrichment failed for batch %s: %s", batch_id, exc)
+        batch.setdefault("roster", [])
+        batch.setdefault("headcount", 0)
+        batch["roster_total_fees"] = None
+        batch["roster_total_paid"] = None
+        batch["roster_total_remaining"] = None
+
+    return batch
+
+
+@router.post("/batches", status_code=201)
+def create_batch(body: BatchCreate):
+    c_res = supabase.table("courses").select("id,name").eq("id", body.course_id).execute()
+    if not c_res.data:
+        raise HTTPException(status_code=400, detail="Course not found")
+    course_name = c_res.data[0]["name"]
+
+    payload = body.model_dump(exclude_none=True)
+    result = supabase.table("batches").insert(payload).execute()
+    batch = result.data[0]
+    batch["course_name"] = course_name
+    batch["student_count"] = 0
+    return batch
+
+
+@router.patch("/batches/{batch_id}")
+def update_batch(batch_id: str, body: BatchUpdate):
+    payload = body.model_dump(exclude_unset=True)
+    if not payload:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if "course_id" in payload and payload["course_id"] is not None:
+        c_res = supabase.table("courses").select("id").eq("id", payload["course_id"]).execute()
+        if not c_res.data:
+            raise HTTPException(status_code=400, detail="Course not found")
+    result = supabase.table("batches").update(payload).eq("id", batch_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    batch = result.data[0]
+    try:
+        if batch.get("course_id"):
+            c_res = supabase.table("courses").select("name").eq("id", batch["course_id"]).execute()
+            if c_res.data:
+                batch["course_name"] = c_res.data[0]["name"]
+        enr_count = (
+            supabase.table("course_enrollments")
+            .select("id", count="exact")
+            .eq("batch_id", batch_id)
+            .execute()
+        )
+        batch["student_count"] = enr_count.count or 0
+    except Exception:
+        pass
+    return batch
+
+
+@router.delete("/batches/{batch_id}", dependencies=[Depends(require_role("owner", "manager"))])
+def delete_batch(batch_id: str):
+    result = supabase.table("batches").delete().eq("id", batch_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    return {"deleted": True}
+
+
 # ── COURSE STUDENTS ───────────────────────────────────────────────────────────
 
 def _enrich_course_students(rows: list) -> list:
@@ -83,6 +270,12 @@ def _enrich_course_students(rows: list) -> list:
             c_res = supabase.table("courses").select("id,name").in_("id", course_ids).execute()
             course_map = {c["id"]: c["name"] for c in c_res.data}
 
+        batch_ids_in_enr = list({e["batch_id"] for e in enrollments if e.get("batch_id")})
+        batch_map: dict = {}
+        if batch_ids_in_enr:
+            b_res = supabase.table("batches").select("id,name").in_("id", batch_ids_in_enr).execute()
+            batch_map = {b["id"]: b["name"] for b in b_res.data}
+
         enr_by_student: dict = defaultdict(list)
         for enr in enrollments:
             enr_by_student[enr["course_student_id"]].append({
@@ -95,6 +288,8 @@ def _enrich_course_students(rows: list) -> list:
                 "payment_status": enr.get("payment_status"),
                 "enrollment_date": enr.get("enrollment_date"),
                 "notes": enr.get("notes"),
+                "batch_id": enr.get("batch_id"),
+                "batch_name": batch_map.get(enr.get("batch_id")),
             })
 
         partner_ids = list({r["referred_by_partner_id"] for r in rows if r.get("referred_by_partner_id")})
@@ -269,12 +464,16 @@ def convert_course_student_to_candidate(student_id: str):
 # ── ENROLLMENTS ───────────────────────────────────────────────────────────────
 
 def _enrich_enrollment(enr: dict) -> dict:
-    """Attach course_name to a single enrollment row."""
+    """Attach course_name and batch_name to a single enrollment row."""
     try:
         if enr.get("course_id"):
             c_res = supabase.table("courses").select("id,name").eq("id", enr["course_id"]).execute()
             if c_res.data:
                 enr["course_name"] = c_res.data[0]["name"]
+        if enr.get("batch_id"):
+            b_res = supabase.table("batches").select("id,name").eq("id", enr["batch_id"]).execute()
+            if b_res.data:
+                enr["batch_name"] = b_res.data[0]["name"]
     except Exception:
         pass
     return enr
@@ -291,6 +490,16 @@ def create_enrollment(student_id: str, body: EnrollmentCreate):
         raise HTTPException(status_code=400, detail="Course not found")
     course = c_res.data[0]
 
+    # Validate batch belongs to the same course
+    batch_name = None
+    if body.batch_id is not None:
+        b_res = supabase.table("batches").select("course_id,name").eq("id", body.batch_id).execute()
+        if not b_res.data:
+            raise HTTPException(status_code=400, detail="Batch not found")
+        if b_res.data[0]["course_id"] != body.course_id:
+            raise HTTPException(status_code=400, detail="Batch does not belong to this course.")
+        batch_name = b_res.data[0]["name"]
+
     # exclude_unset so we can detect which fields the caller actually provided
     payload = body.model_dump(exclude_unset=True)
     payload["course_student_id"] = student_id
@@ -303,6 +512,7 @@ def create_enrollment(student_id: str, body: EnrollmentCreate):
     result = supabase.table("course_enrollments").insert(payload).execute()
     enr = result.data[0]
     enr["course_name"] = course.get("name")
+    enr["batch_name"] = batch_name
     return enr
 
 
@@ -315,6 +525,26 @@ def update_enrollment(enrollment_id: str, body: EnrollmentUpdate):
         c_res = supabase.table("courses").select("id").eq("id", payload["course_id"]).execute()
         if not c_res.data:
             raise HTTPException(status_code=400, detail="Course not found")
+
+    # Validate batch same-course constraint (only when setting a non-null batch_id)
+    if "batch_id" in payload and payload["batch_id"] is not None:
+        b_res = supabase.table("batches").select("course_id").eq("id", payload["batch_id"]).execute()
+        if not b_res.data:
+            raise HTTPException(status_code=400, detail="Batch not found")
+        effective_course_id = payload.get("course_id")
+        if effective_course_id is None:
+            enr_check = (
+                supabase.table("course_enrollments")
+                .select("course_id")
+                .eq("id", enrollment_id)
+                .execute()
+            )
+            if not enr_check.data:
+                raise HTTPException(status_code=404, detail="Enrollment not found")
+            effective_course_id = enr_check.data[0]["course_id"]
+        if b_res.data[0]["course_id"] != effective_course_id:
+            raise HTTPException(status_code=400, detail="Batch does not belong to this course.")
+
     result = supabase.table("course_enrollments").update(payload).eq("id", enrollment_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Enrollment not found")
