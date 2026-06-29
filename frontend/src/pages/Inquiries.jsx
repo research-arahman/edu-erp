@@ -114,6 +114,7 @@ export default function Inquiries() {
   const [formError,  setFormError]  = useState(null);
   const [converting,          setConverting]          = useState(false);
   const [convertingCandidate, setConvertingCandidate] = useState(false);
+  const [convertingCourse,    setConvertingCourse]    = useState(false);
   const [successMsg,          setSuccessMsg]          = useState(null);
 
   // ── data loading ───────────────────────────────────────────────────────────
@@ -281,6 +282,33 @@ export default function Inquiries() {
     }
   }
 
+  async function handleConvertCourse() {
+    if (
+      !window.confirm(
+        'Convert this inquiry to a Course Student? Their details will be copied.'
+      )
+    )
+      return;
+
+    setConvertingCourse(true);
+    setFormError(null);
+    try {
+      const res = await api.post(`/inquiries/${selected.id}/convert-to-course-student`, {});
+      const { course_student, inquiry: updatedInquiry } = res;
+      setInquiries((prev) =>
+        prev.map((i) => (i.id === selected.id ? updatedInquiry : i))
+      );
+      setSuccessMsg(`Converted — new course student created: ${course_student.full_name}.`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+      closePanel();
+      silentRefetch();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setConvertingCourse(false);
+    }
+  }
+
   async function handleDelete(e, inquiry) {
     e.stopPropagation();
     if (!window.confirm(`Delete inquiry for "${inquiry.name}"? This cannot be undone.`)) return;
@@ -418,6 +446,9 @@ export default function Inquiries() {
                         {inq.interest_track === 'employment' && (
                           <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700">Employment</span>
                         )}
+                        {inq.interest_track === 'course' && (
+                          <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700">Language Course</span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-gray-600">
                         {inq.follow_up_date ?? '—'}
@@ -470,28 +501,43 @@ export default function Inquiries() {
             {/* Convert — edit mode only */}
             {panel === 'edit' && (
               <div className="mx-6 mt-4">
-                {selected?.status === 'converted' || selected?.converted_student_id || selected?.converted_candidate_id ? (
+                {selected?.status === 'converted' || selected?.converted_student_id || selected?.converted_candidate_id || selected?.converted_course_student_id ? (
                   <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
                     <span className="text-base">✓</span>
                     <span className="font-medium">
                       {selected?.converted_student_id
-                        ? 'Converted to student'
+                        ? 'Converted to Student'
                         : selected?.converted_candidate_id
-                        ? 'Converted to candidate'
+                        ? 'Converted to Candidate'
+                        : selected?.converted_course_student_id
+                        ? 'Converted to Course Student'
                         : 'Converted'}
                     </span>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleConvertCourse}
+                      disabled={converting || convertingCandidate || convertingCourse || saving}
+                      className={`rounded-md px-4 py-2.5 text-sm font-medium disabled:opacity-50
+                                 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 ${
+                        form.interest_track === 'course'
+                          ? 'bg-purple-600 text-white hover:bg-purple-700'
+                          : 'border border-purple-600 text-purple-700 hover:bg-purple-50'
+                      }`}
+                    >
+                      {convertingCourse ? 'Converting…' : 'Convert to Course Student'}
+                    </button>
                     <button
                       type="button"
                       onClick={handleConvert}
-                      disabled={converting || convertingCandidate || saving}
+                      disabled={converting || convertingCandidate || convertingCourse || saving}
                       className={`rounded-md px-4 py-2.5 text-sm font-medium disabled:opacity-50
                                  focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 ${
-                        form.interest_track === 'employment'
-                          ? 'border border-emerald-600 text-emerald-700 hover:bg-emerald-50'
-                          : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        form.interest_track === 'education'
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                          : 'border border-emerald-600 text-emerald-700 hover:bg-emerald-50'
                       }`}
                     >
                       {converting ? 'Converting…' : 'Convert to Student'}
@@ -499,12 +545,12 @@ export default function Inquiries() {
                     <button
                       type="button"
                       onClick={handleConvertCandidate}
-                      disabled={converting || convertingCandidate || saving}
+                      disabled={converting || convertingCandidate || convertingCourse || saving}
                       className={`rounded-md px-4 py-2.5 text-sm font-medium disabled:opacity-50
                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
-                        form.interest_track === 'education'
-                          ? 'border border-blue-600 text-blue-700 hover:bg-blue-50'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                        form.interest_track === 'employment'
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'border border-blue-600 text-blue-700 hover:bg-blue-50'
                       }`}
                     >
                       {convertingCandidate ? 'Converting…' : 'Convert to Candidate'}
@@ -609,6 +655,7 @@ export default function Inquiries() {
                     <option value="">— select —</option>
                     <option value="education">Education</option>
                     <option value="employment">Employment</option>
+                    <option value="course">Language Course</option>
                   </select>
                 </Field>
 

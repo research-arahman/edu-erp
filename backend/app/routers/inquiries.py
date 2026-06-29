@@ -61,11 +61,12 @@ def convert_inquiry(inquiry_id: str):
         raise HTTPException(status_code=404, detail="Inquiry not found")
     inquiry = inq_result.data[0]
 
-    # 2. Guard: already converted (to student OR candidate)
+    # 2. Guard: already converted (to student OR candidate OR course student)
     if (
         inquiry.get("status") == "converted"
         or inquiry.get("converted_student_id")
         or inquiry.get("converted_candidate_id")
+        or inquiry.get("converted_course_student_id")
     ):
         raise HTTPException(status_code=400, detail="Inquiry already converted.")
 
@@ -114,11 +115,12 @@ def convert_inquiry_to_candidate(inquiry_id: str):
         raise HTTPException(status_code=404, detail="Inquiry not found")
     inquiry = inq_result.data[0]
 
-    # 2. Guard: already converted (to student OR candidate)
+    # 2. Guard: already converted (to student OR candidate OR course student)
     if (
         inquiry.get("status") == "converted"
         or inquiry.get("converted_student_id")
         or inquiry.get("converted_candidate_id")
+        or inquiry.get("converted_course_student_id")
     ):
         raise HTTPException(status_code=400, detail="Inquiry already converted.")
 
@@ -157,3 +159,55 @@ def convert_inquiry_to_candidate(inquiry_id: str):
         )
 
     return {"candidate": new_candidate, "inquiry": upd_result.data[0]}
+
+
+@router.post("/{inquiry_id}/convert-to-course-student", status_code=201)
+def convert_inquiry_to_course_student(inquiry_id: str):
+    # 1. Fetch inquiry
+    inq_result = supabase.table("inquiries").select("*").eq("id", inquiry_id).execute()
+    if not inq_result.data:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    inquiry = inq_result.data[0]
+
+    # 2. Guard: already converted (to student OR candidate OR course student)
+    if (
+        inquiry.get("status") == "converted"
+        or inquiry.get("converted_student_id")
+        or inquiry.get("converted_candidate_id")
+        or inquiry.get("converted_course_student_id")
+    ):
+        raise HTTPException(status_code=400, detail="Inquiry already converted.")
+
+    # 3. Build course_students payload from inquiry fields
+    cs_payload: dict = {
+        "full_name": inquiry["name"],
+        "status": "active",
+    }
+    if inquiry.get("phone"):
+        cs_payload["phone"] = inquiry["phone"]
+    if inquiry.get("email"):
+        cs_payload["email"] = inquiry["email"]
+    if inquiry.get("referred_by_partner_id") is not None:
+        cs_payload["referred_by_partner_id"] = inquiry["referred_by_partner_id"]
+
+    # 4. Create course student
+    cs_result = supabase.table("course_students").insert(cs_payload).execute()
+    if not cs_result.data:
+        raise HTTPException(status_code=500, detail="Failed to create course student record.")
+    new_cs = cs_result.data[0]
+    new_cs_id = new_cs["id"]
+
+    # 5. Update inquiry — surface created id if update fails so nothing is lost
+    inquiry_update = {
+        "status": "converted",
+        "converted_course_student_id": new_cs_id,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    upd_result = supabase.table("inquiries").update(inquiry_update).eq("id", inquiry_id).execute()
+    if not upd_result.data:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Course student created (id={new_cs_id}) but inquiry update failed. Manually set converted_course_student_id on the inquiry.",
+        )
+
+    return {"course_student": new_cs, "inquiry": upd_result.data[0]}
