@@ -133,33 +133,65 @@ edu-erp/
 │                                      #     re-checks scope on reassign);
 │                                      #   DELETE /tasks/{id};
 │                                      #   GET /tasks/assignable-users (scope-filtered per assignment rule B)
-│           └── courses.py             # ALL endpoints auth-gated; deletes require owner/manager;
-│                                      #   courses CRUD (GET/POST/PATCH/DELETE /courses; seeded JLPT N5/JFT-Basic/IELTS);
-│                                      #   course_students: GET list (enriched: enrollments[], course_count, partner_name);
-│                                      #     GET {id} (full enriched); POST/PATCH;
-│                                      #     DELETE — fetches all descendant course_payments, deletes each linked
-│                                      #       transactions row via service-role client (bypasses RLS) BEFORE cascade;
-│                                      #   enrollments: POST /course-students/{id}/enrollments (agreed_fee defaults
-│                                      #     from course.default_fee when omitted; supports multiple courses per student);
-│                                      #     PATCH /enrollments/{id} (change course_id with validation, agreed_fee,
-│                                      #       status, payment_status, enrollment_date, notes);
-│                                      #     DELETE /enrollments/{id} (explicit txn reversal before cascade);
-│                                      #   payments (FINANCE-GATED — require_role("owner","manager","accountant")):
-│                                      #     GET /enrollments/{id}/payments;
-│                                      #     GET /enrollments/{id}/payment-summary → {full_amount=enrollment.agreed_fee,
-│                                      #       total_paid, remaining, payment_count, currency};
-│                                      #     POST /enrollments/{id}/payments → records payment, auto-posts revenue txn
-│                                      #       to account 4300 "Test Prep Course Registration" (credit, reference
-│                                      #       "course_payment:{id}"), stores posted_transaction_id; then recomputes
-│                                      #       enrollment.payment_status: pending/partial/paid from total_paid vs agreed_fee;
-│                                      #     PATCH /payments/{id} (keeps linked txn consistent);
-│                                      #     DELETE /payments/{id} → reverses linked txn, clears link, recomputes status;
-│                                      #   conversion: POST /course-students/{id}/convert-to-student (carries over
-│                                      #     full_name/phone/email/date_of_birth/address/referred_by_partner_id;
-│                                      #     creates students row status=active; sets course_students.converted_student_id;
-│                                      #     400 if already converted; course_student PERSISTS — deleting it does NOT
-│                                      #     delete the created student, by design);
-│                                      #   POST /course-students/{id}/convert-to-candidate (same; converted_candidate_id)
+│           ├── courses.py             # ALL endpoints auth-gated; deletes require owner/manager;
+│           │                          #   courses CRUD (GET/POST/PATCH/DELETE /courses; seeded JLPT N5/JFT-Basic/IELTS);
+│           │                          #   course_students: GET list (enriched: enrollments[], course_count, partner_name);
+│           │                          #     GET {id} (full enriched); POST/PATCH;
+│           │                          #     DELETE — fetches all descendant course_payments, deletes each linked
+│           │                          #       transactions row via service-role client (bypasses RLS) BEFORE cascade;
+│           │                          #   enrollments: POST /course-students/{id}/enrollments (agreed_fee defaults
+│           │                          #     from course.default_fee when omitted; optional batch_id validated:
+│           │                          #     batch.course_id must equal enrollment.course_id, HTTP 400 if mismatch);
+│           │                          #     PATCH /enrollments/{id} (course_id, agreed_fee, status, payment_status,
+│           │                          #       batch_id, enrollment_date, notes);
+│           │                          #     DELETE /enrollments/{id} (explicit txn reversal before cascade);
+│           │                          #   payments (FINANCE-GATED — require_role("owner","manager","accountant")):
+│           │                          #     GET /enrollments/{id}/payments;
+│           │                          #     GET /enrollments/{id}/payment-summary → {full_amount, total_paid, remaining, count};
+│           │                          #     POST /enrollments/{id}/payments → records payment, auto-posts revenue txn
+│           │                          #       to account 4300 (credit, reference "course_payment:{id}"),
+│           │                          #       stores posted_transaction_id; recomputes payment_status;
+│           │                          #     PATCH /payments/{id}; DELETE /payments/{id} (reverses txn, recomputes);
+│           │                          #   batches: GET /batches?course_id= (enriched course_name + student_count);
+│           │                          #     GET /batches/{id} → batch + roster (course_student_name, phone,
+│           │                          #       enrollment_id, agreed_fee, status, payment_status,
+│           │                          #       total_paid[finance-only], remaining[finance-only]) + headcount +
+│           │                          #       roster totals (finance-gated amounts null for non-finance);
+│           │                          #     POST /batches (course_id required); PATCH /batches/{id} (instructor_id
+│           │                          #       validated against instructors table); DELETE /batches/{id};
+│           │                          #   conversion: POST /course-students/{id}/convert-to-student;
+│           │                          #   POST /course-students/{id}/convert-to-candidate
+│           ├── instructors.py         # ALL endpoints auth-gated; deletes require owner/manager;
+│           │                          #   GET /instructors (enriched: payment_count,
+│           │                          #     total_paid[finance-only], assigned batch names);
+│           │                          #   POST /instructors; PATCH /instructors/{id};
+│           │                          #   DELETE /instructors/{id} — fetches all instructor_payments, deletes each
+│           │                          #     linked transactions row via service-role BEFORE cascade (same RLS pattern
+│           │                          #     as course_payments; convention 30 applies here too);
+│           │                          #   FINANCE-GATED (require_role("owner","manager","accountant")):
+│           │                          #     GET /instructors/{id}/payments;
+│           │                          #     GET /instructors/{id}/payment-summary (total_paid, payment_count, currency);
+│           │                          #     POST /instructors/{id}/payments — records instructor_payments row,
+│           │                          #       auto-posts EXPENSE txn to account 5100 "Freelance/External Consultant
+│           │                          #       Fees" (direction DEBIT, reference "instructor_payment:{id}",
+│           │                          #       stores posted_transaction_id — idempotent);
+│           │                          #     PATCH /instructor-payments/{id} (distinct path from /payments/{id}
+│           │                          #       to avoid routing collision with course payment endpoints);
+│           │                          #     DELETE /instructor-payments/{id} — reverses linked txn, clears link
+│           └── dashboard.py           # ALL endpoints require_role("owner","manager","accountant") — finance-gated;
+│                                      #   GET /dashboard/finance?from_date=&to_date= → {
+│                                      #     summary: {total_income, total_expenses, net, currency}
+│                                      #       (refund-aware revenue/expense logic over date range);
+│                                      #     income_breakdown: [{account_code, account_name, total}]
+│                                      #       (revenue accounts, e.g. 4300 course/4200 service/4400 commission);
+│                                      #     expense_breakdown: [{account_code, account_name, total}]
+│                                      #       (expense+cogs, e.g. 5100 instructor/6100 marketing);
+│                                      #     pending_in: {unpaid_service_fees[] (status pending/invoiced, payer_name),
+│                                      #       outstanding_course_balances[] (agreed_fee − sum(payments) where >0,
+│                                      #       course_student_name/course_name/batch_name), pending_in_total}
+│                                      #       — current-state only, NOT date-filtered;
+│                                      #     counts: {active_course_students, active_batches, active_instructors}
+│                                      #   }
 ├── frontend/
 │   ├── .env                           # VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (gitignored)
 │   ├── vite.config.js                 # proxy: '/api' → http://127.0.0.1:8000 (single clean rule)
@@ -181,7 +213,9 @@ edu-erp/
 │       │   ├── Layout.jsx                   # sidebar nav + header; groups: Dashboard / Education / Employment /
 │       │   │                                #   Data / Operations / PARTNERS /
 │       │   │                                #   TASKS (My Tasks always; Assign/Manage only for owner/manager/team_leader) /
-│       │   │                                #   LANGUAGE COURSES (Courses + Course Students; all logged-in users) /
+│       │   │                                #   LANGUAGE COURSES (Courses + Course Students + Batches + Instructors;
+│       │   │                                #     all logged-in users) /
+│       │   │                                #   FINANCE (Finance Dashboard; owner/manager/accountant only) /
 │       │   │                                #   ADMIN (owner-only, shows Staff link);
 │       │   │                                #   header: logged-in user name+role + Logout button
 │       │   ├── EducationSelector.jsx        # reusable cascading education selector; saves target_* on student
@@ -230,21 +264,40 @@ edu-erp/
 │                                            #   Chart of Accounts read-only tab; BDT ৳ formatting
 │           ├── Courses.jsx                  # WORKING — course catalog CRUD; list table + add/edit drawer;
 │                                            #   /courses route; all logged-in users
-│           └── CourseStudents.jsx           # WORKING — course student registration list; add/edit drawer:
-│                                            #   demographics (name, DOB, phone, email, gender, address,
-│                                            #     notes, referred_by_partner_id, status);
-│                                            #   enrollments section: list of enrollments with course name,
-│                                            #     agreed_fee, status, payment_status badge; add enrollment
-│                                            #     (course picker, agreed_fee defaulting from course), edit
-│                                            #     (change course, fee, status), remove enrollment;
-│                                            #   finance-gated payments panel per enrollment (owner/manager/accountant):
-│                                            #     Full/Paid/Remaining summary; payment history table;
-│                                            #     + Add Payment (amount, date, method, reference, notes);
-│                                            #     delete individual payment;
-│                                            #   Convert section: Convert to Student button (creates student,
-│                                            #     shows ✓ Converted to Student when done); Convert to Candidate
-│                                            #     button (✓ Converted to Candidate); each guarded with confirm;
-│                                            #   /course-students route
+│           ├── CourseStudents.jsx           # WORKING — course student registration list; add/edit drawer:
+│           │                                #   demographics (name, DOB, phone, email, gender, address,
+│           │                                #     notes, referred_by_partner_id, status);
+│           │                                #   enrollments section: list of enrollments with course name,
+│           │                                #     agreed_fee, status, payment_status badge; add enrollment
+│           │                                #     (course picker, agreed_fee defaulting from course, batch
+│           │                                #     dropdown filtered to course), edit, remove enrollment;
+│           │                                #   finance-gated payments panel per enrollment (owner/manager/accountant):
+│           │                                #     Full/Paid/Remaining summary; payment history table;
+│           │                                #     + Add Payment (amount, date, method, reference, notes);
+│           │                                #     delete individual payment;
+│           │                                #   Convert section: Convert to Student / Convert to Candidate
+│           │                                #     buttons with ✓ Converted indicators; /course-students route
+│           ├── Batches.jsx                  # WORKING — batch list + add/edit drawer (course picker, name,
+│           │                                #   start/end dates, status [planned/running/completed/cancelled],
+│           │                                #   notes, instructor dropdown); batch detail panel: headcount,
+│           │                                #   per-student roster with payment_status badge +
+│           │                                #   finance-gated fee amounts (total_paid, remaining);
+│           │                                #   LANGUAGE COURSES nav group; /batches route
+│           ├── Instructors.jsx              # WORKING — contract instructor list + add/edit drawer
+│           │                                #   (full_name, phone, email, specialization, rate_note,
+│           │                                #   notes, is_active); finance-gated payments section:
+│           │                                #   total paid summary, payment history, + Add Payment
+│           │                                #   (auto-posts expense to acct 5100), delete payment;
+│           │                                #   LANGUAGE COURSES nav group; /instructors route
+│           └── FinanceDashboard.jsx         # WORKING — finance-gated /finance-dashboard
+│                                            #   (owner/manager/accountant); summary cards
+│                                            #   (Total Income / Total Expenses / Net / Pending In);
+│                                            #   counts row (active course students / batches / instructors);
+│                                            #   income & expense breakdown panels by account;
+│                                            #   Pending Money In: unpaid service fees table +
+│                                            #   outstanding course balances table; date-range filter
+│                                            #   for summary/breakdown; BDT ৳ formatting;
+│                                            #   FINANCE nav group
 └── supabase/
     ├── config.toml
     └── migrations/                    # all applied; push with `supabase db push`
@@ -307,8 +360,25 @@ edu-erp/
         │                                         # delete — FAILED silently (RLS blocks trigger-context
         │                                         # deletes on transactions even SECURITY DEFINER). Left for
         │                                         # history; immediately dropped by next migration.
-        └── *_drop_course_payment_trigger.sql    # drops the above trigger; canonical reversal is Python
-                                                  # service-role DELETE before cascade (see §11 conventions)
+        ├── *_drop_course_payment_trigger.sql    # drops the above trigger; canonical reversal is Python
+        │                                         # service-role DELETE before cascade (see §11 conventions)
+        ├── *_create_batches.sql                  # batches (uuid PK; course_id uuid FK → courses NOT NULL;
+        │                                         #   name text; start_date date; end_date date;
+        │                                         #   status text CHECK ('planned'|'running'|'completed'|'cancelled')
+        │                                         #   DEFAULT 'planned'; notes text; created_at timestamptz);
+        │                                         # adds course_enrollments.batch_id (uuid nullable FK →
+        │                                         #   batches ON DELETE SET NULL)
+        └── *_create_instructors.sql              # instructors (uuid PK; full_name text NOT NULL; phone; email;
+                                                  #   specialization; rate_note; is_active bool default true;
+                                                  #   notes; created_at);
+                                                  # adds batches.instructor_id (uuid nullable FK → instructors
+                                                  #   ON DELETE SET NULL);
+                                                  # instructor_payments (uuid PK; instructor_id FK instructors
+                                                  #   ON DELETE CASCADE; batch_id uuid nullable FK batches
+                                                  #   ON DELETE SET NULL; amount float; currency; payment_date;
+                                                  #   payment_method; reference; notes;
+                                                  #   posted_transaction_id uuid nullable FK → transactions
+                                                  #   ON DELETE SET NULL; recorded_by FK profiles; created_at)
 ```
 
 ---
@@ -363,8 +433,8 @@ edu-erp/
   - `GET /course-students/{id}` — full enriched profile with enrollments + payments per enrollment
   - `POST/PATCH /course-students` — create / update course student demographics
   - `DELETE /course-students/{id}` — fetches all descendant `course_payments`, deletes each linked `transactions` row via service-role (bypasses RLS), then lets DB cascade course_student delete
-  - `POST /course-students/{id}/enrollments` — enrol in a course; agreed_fee defaults from `course.default_fee`; multiple courses per student supported
-  - `PATCH /enrollments/{id}` — change course_id (with conflict validation), agreed_fee, status, payment_status, date, notes
+  - `POST /course-students/{id}/enrollments` — enrol in a course; agreed_fee defaults from `course.default_fee`; optional `batch_id` validated (batch.course_id must equal enrollment.course_id — HTTP 400 if mismatch)
+  - `PATCH /enrollments/{id}` — change course_id (with conflict validation), agreed_fee, status, payment_status, batch_id, date, notes
   - `DELETE /enrollments/{id}` — explicit transaction reversal for all payments before cascade
   - **Finance-gated payment endpoints (`require_role("owner","manager","accountant")`):**
     - `GET /enrollments/{id}/payments` — list payment records
@@ -372,8 +442,21 @@ edu-erp/
     - `POST /enrollments/{id}/payments` — record a payment; auto-posts revenue transaction to account 4300 (credit, reference `course_payment:{id}`, sets `posted_transaction_id`); recomputes `enrollment.payment_status` (pending/partial/paid)
     - `PATCH /payments/{id}` — update (keeps linked transaction consistent)
     - `DELETE /payments/{id}` — reverses linked transaction, clears `posted_transaction_id`, recomputes enrollment payment status
+  - **Batches** — `GET /batches?course_id=` enriched with student_count; `GET /batches/{id}` with full roster (course_student_name, phone, enrollment_id, agreed_fee, status, payment_status, total_paid[finance-only], remaining[finance-only]) + headcount + roster totals; `POST /batches` (course_id required); `PATCH /batches/{id}` (accepts instructor_id validated); `DELETE /batches/{id}`
   - `POST /course-students/{id}/convert-to-student` — creates a `students` row carrying over demographics + referred_by_partner_id; sets `converted_student_id`; 400 if already converted; course_student persists independently
   - `POST /course-students/{id}/convert-to-candidate` — same pattern; sets `converted_candidate_id`
+- **Instructors** (all auth-gated; `instructors.py`):
+  - `GET /instructors` — list enriched with payment_count, total_paid[finance-only], assigned batch names
+  - `POST /instructors`, `PATCH /instructors/{id}` — instructor CRUD
+  - `DELETE /instructors/{id}` — fetches all instructor_payments, deletes each linked `transactions` row via service-role BEFORE cascade (same Python-layer reversal rule as course_payments)
+  - **Finance-gated payment endpoints (`require_role("owner","manager","accountant")`):**
+    - `GET /instructors/{id}/payments` — list instructor payment records
+    - `GET /instructors/{id}/payment-summary` — `{total_paid, payment_count, currency}`
+    - `POST /instructors/{id}/payments` — records `instructor_payments` row; auto-posts EXPENSE transaction to account 5100 "Freelance/External Consultant Fees" (direction DEBIT, reference `instructor_payment:{id}`, stores `posted_transaction_id`); idempotent
+    - `PATCH /instructor-payments/{id}` — distinct path to avoid routing collision with course payment endpoints
+    - `DELETE /instructor-payments/{id}` — reverses linked transaction, clears `posted_transaction_id`
+- **Finance Dashboard** (all endpoints `require_role("owner","manager","accountant")`; `dashboard.py`):
+  - `GET /dashboard/finance?from_date=&to_date=` — returns `{summary: {total_income, total_expenses, net, currency}, income_breakdown: [{account_code, account_name, total}], expense_breakdown: [{...}], pending_in: {unpaid_service_fees[], outstanding_course_balances[], pending_in_total}, counts: {active_course_students, active_batches, active_instructors}}`. pending_in is current-state (not date-filtered). income/expense use the same refund-aware accounting logic as the summary endpoint.
 
 **Auth foundation:**
 - `backend/app/auth.py` — JWKS/ES256 JWT verification using `PyJWKClient` fetching from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`, `algorithms=["ES256"]`, `audience="authenticated"`. Provides: `get_current_user` FastAPI dependency (verifies token, extracts `sub`, loads profile row, returns id+email+role+profile fields; returns `role=None` if no profile row yet; raises 403 if `is_active=False`); `get_current_user_optional`; `require_role(*roles)` factory.
@@ -393,7 +476,7 @@ edu-erp/
 - **MyTasks.jsx** — every logged-in user; shows tasks assigned to the current user; status workflow todo → in_progress → done; "+ New Personal Task" creates a self-assigned task with optional related student or candidate link.
 - **ManageTasks.jsx** — owner/manager/team_leader only; table of all tasks the current user can manage; "+ Assign Task" drawer with assignee dropdown populated from `GET /tasks/assignable-users` (scope-enforced so team_leader only sees their team), priority, due_date, Related To toggle (None/Student/Candidate with conditional searchable dropdown); edit, reassign, delete; status filter tabs. `/manage-tasks` route guarded.
 
-Fully working feature pages: Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees, Login, Staff, MyTasks, ManageTasks, Accounting, **Courses, CourseStudents**.
+Fully working feature pages: Countries, Institutes, Programs, AdmissionTemplates, PlacementTemplates, Industries, Employers, Jobs, DestinationExplorer, Students, Candidates, Inquiries, Applications, JobApplications, ReferralPartners, ServiceFees, Login, Staff, MyTasks, ManageTasks, Accounting, **Courses, CourseStudents, Batches, Instructors, FinanceDashboard**.
 Placeholders: Dashboard. (Tasks.jsx old placeholder removed; replaced by MyTasks.jsx + ManageTasks.jsx.)
 
 **Reusable components:** `EducationSelector.jsx`, `EmploymentSelector.jsx`, `AdmissionRoadmap.jsx`, `PlacementRoadmap.jsx`
@@ -462,8 +545,11 @@ Placeholders: Dashboard. (Tasks.jsx old placeholder removed; replaced by MyTasks
 **Language Course Track:**
 - `courses` (uuid PK) — `name` (text NOT NULL), `description` (text), `default_fee` (float), `currency` (text default 'BDT'), `is_active` (bool default true), `created_at`. **Seeded:** JLPT N5, JFT-Basic, IELTS.
 - `course_students` (uuid PK) — dedicated entity separate from `students` (abroad applicants). Fields: `full_name`, `phone`, `email`, `date_of_birth` (date), `gender` (text), `address` (text), `status` (text default 'active'), `referred_by_partner_id` (uuid nullable FK → referral_partners), **`converted_student_id`** (uuid nullable FK → students — set on conversion; convert-once guard), **`converted_candidate_id`** (uuid nullable FK → candidates — set on conversion; convert-once guard per track), `notes` (text), `created_at`. Deleting a course_student does NOT delete the converted student/candidate — records are independent.
-- `course_enrollments` (uuid PK) — joins course_student ↔ course with fee detail. `course_student_id` (uuid FK → course_students ON DELETE CASCADE), `course_id` (uuid FK → courses), `agreed_fee` (float — may differ from course.default_fee; negotiated at enrollment), `currency` (text default 'BDT'), `enrollment_date` (date), `status` (text default 'active'), `payment_status` (text default 'pending'; server-recomputed to 'partial' or 'paid' as payments are recorded), **`posted_transaction_id`** (uuid FK → transactions ON DELETE SET NULL — deprecated field; actual posting is per-payment via course_payments), `notes` (text), `created_at`. A student may enrol in multiple courses simultaneously.
+- `course_enrollments` (uuid PK) — joins course_student ↔ course with fee detail. `course_student_id` (uuid FK → course_students ON DELETE CASCADE), `course_id` (uuid FK → courses), `agreed_fee` (float — may differ from course.default_fee; negotiated at enrollment), `currency` (text default 'BDT'), `enrollment_date` (date), `status` (text default 'active'), `payment_status` (text default 'pending'; server-recomputed to 'partial' or 'paid' as payments are recorded), **`batch_id`** (uuid nullable FK → batches ON DELETE SET NULL — assignment validated: batch.course_id must equal enrollment.course_id), **`posted_transaction_id`** (uuid FK → transactions ON DELETE SET NULL — deprecated on enrollment; actual posting is per-payment via course_payments), `notes` (text), `created_at`. A student may enrol in multiple courses simultaneously.
 - `course_payments` (uuid PK) — installment records per enrollment. `enrollment_id` (uuid FK → course_enrollments ON DELETE CASCADE), `amount` (float NOT NULL), `currency` (text default 'BDT'), `payment_date` (date), `payment_method` (text), `reference` (text), `notes` (text), **`posted_transaction_id`** (uuid nullable FK → transactions ON DELETE SET NULL — links to auto-created revenue txn; prevents double-posting; cleared on reversal), `recorded_by` (uuid FK → profiles), `created_at`. Finance-RLS-gated (can_view_accounting() on select/insert/update).
+- `batches` (uuid PK) — a batch belongs to ONE course. `course_id` (uuid FK → courses NOT NULL), `name` (text), `start_date` (date), `end_date` (date), `status` (text CHECK IN ('planned','running','completed','cancelled') DEFAULT 'planned'), **`instructor_id`** (uuid nullable FK → instructors ON DELETE SET NULL), `notes` (text), `created_at`. Roster = course_enrollments with this batch_id. Headcount + per-student payment status on GET /batches/{id}; finance-gated amounts null for non-finance roles.
+- `instructors` (uuid PK) — contract instructors; NOT auth users or profiles (no login). `full_name` (text NOT NULL), `phone`, `email`, `specialization` (text), `rate_note` (text), `is_active` (bool default true), `notes` (text), `created_at`.
+- `instructor_payments` (uuid PK) — payments made to a contract instructor. `instructor_id` (uuid FK → instructors ON DELETE CASCADE), `batch_id` (uuid nullable FK → batches ON DELETE SET NULL), `amount` (float), `currency`, `payment_date`, `payment_method`, `reference`, `notes`, **`posted_transaction_id`** (uuid nullable FK → transactions ON DELETE SET NULL — links to auto-created expense txn on account 5100; same idempotency pattern as course_payments), `recorded_by` (uuid FK → profiles), `created_at`. Finance-RLS-gated. Auto-posts expense on POST; reversal on DELETE; cascade-reversed in Python (DELETE /instructors/{id}) before instructor delete — same convention 30 pattern.
 
 ### Target chain field types
 - **Students:** `target_country_id` INT; `target_institute_id` / `target_program_id` / `target_session_id` UUID (str)
@@ -595,6 +681,21 @@ Keyed by **(country_id INT + industry_field_id INT)**, UNIQUE on the pair. Paral
   - **Backend:** `POST /course-students/{id}/convert-to-student` creates a new `students` row carrying over full_name, phone, email, date_of_birth, address, referred_by_partner_id; sets status=active; sets `course_students.converted_student_id`; HTTP 400 if already converted to student. `POST /course-students/{id}/convert-to-candidate` mirrors this; sets `converted_candidate_id`; 400 if already converted to candidate. Guards are per-track (can convert to student AND candidate independently). Course student record PERSISTS after conversion — deleting it does NOT delete the created student/candidate (same design as inquiry conversion).
   - **Frontend:** `CourseStudents.jsx` edit drawer has a Convert section: "Convert to Student" button + "Convert to Candidate" button; each shows a `window.confirm`; on success shows "✓ Converted to Student" / "✓ Converted to Candidate" indicators. Verified in browser.
 
+- ✅ **C19 — Language Course Track — Batches:**
+  - **Migration** `*_create_batches.sql`: `batches` table (id uuid, course_id FK → courses NOT NULL, name, start_date, end_date, status CHECK (planned/running/completed/cancelled) default planned, notes, created_at). `course_enrollments.batch_id` (uuid nullable FK → batches ON DELETE SET NULL).
+  - **Backend** (in `courses.py`; requires login; deletes owner/manager): `GET /batches?course_id=` enriched with course_name + student_count; `GET /batches/{id}` — batch detail + full roster (course_student_name, phone, enrollment_id, agreed_fee, status, payment_status, total_paid, remaining) + headcount + roster fee totals. Finance gate: fee/paid/remaining amounts are null for non-finance roles; payment_status label is always shown. `POST /batches` (course_id required); `PATCH /batches/{id}` (accepts instructor_id, validated against instructors); `DELETE /batches/{id}`. Enrollment endpoints (POST/PATCH) accept optional batch_id **validated to match enrollment.course_id** (HTTP 400 if not); enriched enrollment data includes batch_id/batch_name.
+  - **Frontend** `Batches.jsx`: list + add/edit drawer (course picker, name, dates, status, notes, instructor dropdown). Batch detail panel: headcount, per-student roster with payment_status badge + finance-gated amounts. Batch assignment dropdown added to enrollment forms in `CourseStudents.jsx` (filtered to batches of that course). "Batches" link in LANGUAGE COURSES nav group.
+
+- ✅ **C20 — Language Course Track — Contract Instructors + Instructor Payments (expense accounting):**
+  - **Migration** `*_create_instructors.sql`: `instructors` table (id uuid, full_name NOT NULL, phone, email, specialization, rate_note, is_active, notes, created_at). `batches.instructor_id` (uuid nullable FK → instructors ON DELETE SET NULL). `instructor_payments` table (id uuid, instructor_id FK instructors ON DELETE CASCADE, batch_id nullable FK batches ON DELETE SET NULL, amount float, currency, payment_date, payment_method, reference, notes, posted_transaction_id nullable FK transactions ON DELETE SET NULL, recorded_by FK profiles, created_at).
+  - **Backend** `instructors.py` (registered under `/api`): instructor records require login (deletes owner/manager). `GET /instructors` enriches with payment_count, total_paid[finance-only], assigned batches. `POST/PATCH /instructors`. `DELETE /instructors/{id}` — fetches all the instructor's payments, deletes each linked `transactions` row via service-role client BEFORE cascade (convention 30 — RLS blocks trigger-context deletes). Finance-gated payment endpoints: `GET /instructors/{id}/payments`; `GET /instructors/{id}/payment-summary`; `POST /instructors/{id}/payments` — records payment + **auto-posts EXPENSE transaction to account 5100** "Freelance/External Consultant Fees" (direction DEBIT, reference `instructor_payment:{id}`, stores `posted_transaction_id` — idempotent). `DELETE /instructor-payments/{id}` (distinct path from course /payments to avoid routing collision) — reverses linked txn, clears `posted_transaction_id`. `PATCH /instructor-payments/{id}`. `PATCH /batches/{id}` accepts instructor_id (validated vs instructors table); enriched batch responses include instructor_id/instructor_name.
+  - **CRITICAL pattern (convention 30 applies here too):** Instructor payment expense reversal on cascade is handled EXPLICITLY in Python (service-role) in `DELETE /instructors/{id}` — NOT a DB trigger. Verified: payment posts expense to 5100; delete payment reverses; delete instructor reverses all (expenses + txn count return to 0, no orphans).
+  - **Frontend** `Instructors.jsx`: list + add/edit drawer. Finance-gated payments section: total paid summary, payment history table, + Add Payment (posts to accounting as expense), delete payment. Instructor dropdown added to Batches add/edit form. "Instructors" link in LANGUAGE COURSES nav group.
+
+- ✅ **C21 — Owner Finance Dashboard:**
+  - **Backend** `dashboard.py` (registered under `/api`): `GET /dashboard/finance?from_date=&to_date=` — finance-gated (`require_role("owner","manager","accountant")`). Returns: `summary` {total_income, total_expenses, net, currency} (refund-aware revenue/expense logic over the date range, reuses same accounting computation as summary endpoint); `income_breakdown` [{account_code, account_name, total}] (all revenue accounts with non-zero totals in range, e.g. 4300 course / 4200 service / 4400 commission); `expense_breakdown` [{...}] (expense+cogs accounts, e.g. 5100 instructor / 6100 marketing); `pending_in` {unpaid_service_fees[] (status pending/invoiced, with payer_name), outstanding_course_balances[] (per enrollment agreed_fee − sum(payments) where balance >0, with course_student_name/course_name/batch_name), pending_in_total} — current-state only, NOT date-filtered; `counts` {active_course_students, active_batches, active_instructors}.
+  - **Frontend** `FinanceDashboard.jsx` (route `/finance-dashboard`, guarded owner/manager/accountant; "Finance Dashboard" link in FINANCE nav group): summary cards (Total Income green / Total Expenses red / Net blue / Pending In amber); counts row; income & expense breakdown panels; Pending Money In section with unpaid service fees table + outstanding course balances table; date-range filter (applied to summary/breakdown only; pending_in always current-state); BDT ৳ formatting.
+
 - ✅ **C15 — Accounting Phase 2 (auto-posting from service fees + fees-paid profile indicator):**
   - **Migration** `*_add_service_fee_posted_txn.sql`: adds `service_fees.posted_transaction_id` (uuid FK → transactions ON DELETE SET NULL).
   - **`_sync_fee_accounting(fee_row, current_user_id)`** helper in `service_fees.py`, wired into POST and PATCH:
@@ -651,12 +752,9 @@ git add supabase/migrations/ && git commit -m "..." && git push
    - **Escalation notifications** — write to `notifications` table (recipient_id, type, related_task_id, is_read) escalating up `reports_to` chain: staff → team_leader → manager → owner.
    - Full design in §10A.
 
-2. **Language Course Track** — foundation (C16), payments (C17), and conversion (C18) are **DONE**. Remaining in order:
-   - **(a) Batches** (`batches` table: course_id FK, batch_name, start_date, end_date, assigned_instructor_id nullable, max_seats, is_active; `batch_enrollments` table: course_student_id FK, batch_id FK, payment_status, paid_amount float; link course_enrollments to batch_id). UI: headcount per batch on course/batch page; per-student payment status within each batch; course student profile shows current batch + payment status.
-   - **(b) Contract Instructors** (`instructors` table: name, phone, email, specialization, is_active, notes; NOT system staff, no login; `instructor_engagements`: instructor_id, batch_id, engagement_type per_hour/per_class/per_course, agreed_rate float; `instructor_payments`: instructor_id, engagement_id, amount, posted_transaction_id FK → transactions, status). Auto-post expense txn to account 5100 "Freelance / External Consultant Fees" when status → 'paid'. Same `posted_transaction_id` idempotency pattern.
-   - **(c) Owner Finance Command-Center** — finance-gated dashboard: pending money IN (course_enrollments where payment_status != 'paid'; service_fees pending/invoiced); pending money OUT (instructor_payments pending); total income/expense this month / YTD from transactions. Read-only aggregation.
-   - **(d) Course Lead Funnel** — extend `inquiries.interest_track` CHECK to add `'language_course'`; add `POST /inquiries/{id}/convert-course-student` endpoint; show course-specific fields in inquiry form when track = language_course.
-   - **(e) Japan Language-School Roadmap Template** — the 4-phase workflow in §14 Component 8 maps onto the process-template pattern; build when conversion lead funnel is done.
+2. **Language Course Track** — foundation (C16), payments (C17), conversion (C18), batches (C19), contract instructors (C20), and finance dashboard (C21) are **DONE**. Remaining in order:
+   - **(a) Course Lead Funnel** — extend `inquiries.interest_track` CHECK to add `'language_course'`; add `POST /inquiries/{id}/convert-course-student` endpoint; show course-specific fields in inquiry form when `interest_track === 'language_course'`. Reuses existing inquiry infrastructure.
+   - **(b) Japan Language-School Roadmap Template** — the 4-phase workflow in §14 Component 8 maps onto the reusable process-template pattern; build when the lead funnel conversion is done so course students have a roadmap after converting.
    - Full spec in §14.
 
 3. **Wire `assigned_counselor` / `created_by`** into feature routers and schemas. All feature routers are now auth-gated; `get_current_user()` is already available on every endpoint. When creating a student/candidate/inquiry/application: populate `created_by` from `get_current_user().id`. When assigning: populate `assigned_counselor` from chosen user's ID. FK columns already exist in DB but are omitted from all schemas and forms.
@@ -855,43 +953,38 @@ This template is to be filled in **with department leads when staff are onboarde
 - **Client-side search lives in `lib/search.js`.** The shared `matchesQuery(record, query)` helper handles forgiving multi-field search. Name/email: case-insensitive substring. Phone: digit-strip then substring. Date of birth: normalize to YYYYMMDD/DDMMYYYY/MMDDYYYY plus raw YYYY/MM/DD fragments; match if query digits are a substring of any form. Import this helper — do NOT inline it per page.
 - **Inquiry conversion is convert-once, one-destination.** Both `/convert` (→ student) and `/convert-candidate` (→ candidate) check: `status != 'converted'`, `converted_student_id IS NULL`, and `converted_candidate_id IS NULL`. If any fails: HTTP 400 "Inquiry already converted." An inquiry converts to a student OR a candidate — never both, never twice.
 - **`interest_track` vs `interest_level` — do not conflate.** `interest_track` is a separate text column on `inquiries` ('education'|'employment'|null) — which service track the lead is pursuing, deliberately NOT a `prog_level` enum value. `interest_level` uses `prog_level` values (bachelors/masters/phd/language) and is education-track only. Render `interest_level` conditionally (only when `interest_track === 'education'`) and clear it when switching to employment.
+- **Instructor payments auto-post expense to account 5100 (Freelance/External Consultant Fees), direction DEBIT.** `POST /instructors/{id}/payments` records an `instructor_payments` row and auto-posts an expense transaction to account 5100 (reference `instructor_payment:{id}`, stores `posted_transaction_id` — idempotent). `DELETE /instructor-payments/{id}` (distinct path from course `/payments/{id}` — avoids routing collision) reverses the linked transaction before deleting. `DELETE /instructors/{id}` fetches ALL the instructor's payments and reverses each linked transaction via the service-role client BEFORE cascade delete — same Python-layer reversal rule as course_payments (convention 30 applies). Verified: payment posts expense; delete payment reverses; delete instructor reverses all — no orphaned transactions.
+- **Batch course-scoping: a batch belongs to exactly ONE course.** When assigning `batch_id` to a course enrollment (POST or PATCH), validate that `batch.course_id == enrollment.course_id` (HTTP 400 if mismatch). The batch assignment dropdown in `CourseStudents.jsx` is filtered to only batches of the chosen course. Finance-gated batch roster: `GET /batches/{id}` enriches each roster row with `total_paid` and `remaining` only for finance roles; `payment_status` label is always shown regardless of role.
 
 ---
 
 ## 12. Immediate Next Step
 
-**Language Course Track foundation + payments + conversion (C16–C18) are complete.** The next step is **Batches** (§10 item 2a):
+**Language Course Track foundation + payments + conversion + batches + contract instructors + finance dashboard (C16–C21) are complete.**
+
+The next step is the **Course Lead Funnel** (§10 item 2a):
 
 ---
 
-**Next — Batches (Language Course Track 2a):**
+**Next — Course Lead Funnel (Language Course Track 2a):**
 
-Step 1 — Migrations:
-- Create `batches` table: `course_id` FK → courses, `batch_name`, `start_date`, `end_date`, `assigned_instructor_id` (uuid nullable FK → instructors — can be NULL until instructor entity is built), `max_seats`, `is_active`, `created_at`
-- Create `batch_enrollments` table: `course_student_id` FK → course_students, `batch_id` FK → batches, `payment_status` (pending/partial/paid), `paid_amount` float, `created_at`
-- Add `batch_id` (nullable FK → batches) to `course_enrollments`
+Step 1 — Migration:
+- Alter `inquiries.interest_track` CHECK constraint to allow `'language_course'` as a third value (alongside `'education'` and `'employment'`). Drop the old CHECK, add new one.
 
 Step 2 — Backend:
-- Batches CRUD in `courses.py`: `GET/POST/PATCH/DELETE /courses/{id}/batches`
-- Batch enrollment: `POST /batches/{id}/enroll` (assign a course_student to a batch)
-- `GET /batches/{id}/students` — list enrolled students with payment status per batch
-- Headcount query: add `enrolled_count` to batch list response
+- In `inquiries.py`, add `POST /inquiries/{id}/convert-course-student` endpoint: same convert-once guard pattern (`status != 'converted'` AND `converted_student_id IS NULL` AND `converted_candidate_id IS NULL`; also check a `converted_course_student_id` FK if adding one); carry over name/phone/email/referred_by_partner_id; create `course_students` row; mark inquiry `status='converted'`.
+- Add course-specific inquiry fields to schemas when `interest_track = 'language_course'` (e.g., `target_course`, `target_test_date`).
 
 Step 3 — Frontend:
-- Add "Batches" section to Courses.jsx (or a dedicated Batches page): list batches per course with headcount; add/edit batch drawer
-- CourseStudents.jsx: show current batch on enrollment row; payment status badge
+- `Inquiries.jsx`: add `'Language Course'` option to interest_track dropdown; show course-specific fields (target test, target date) when track = language_course; add "Convert to Course Student" button alongside existing conversion buttons.
 
 ---
 
-**Parallel option — Task Management later phases:**
-
-Step 1 — Schema extensions: `departments` table (9 rows); `department_id`, `tier`, `reports_to` on `profiles`; `department_id` on `daily_task_templates`.
-
-Step 2 — Fixed-task generation → verification → escalation (§10A full spec).
+**Also available — Task Management later phases:** Schema extensions (`departments` table, `department_id`/`tier`/`reports_to` on `profiles`) + fixed-task generation → verification → escalation (§10A full spec).
 
 ---
 
-> **Before starting:** ensure all three terminals are running; `curl http://127.0.0.1:8000/api/courses` (with owner JWT) → returns course list with enrollments.
+> **Before starting:** ensure all three terminals are running; `curl http://127.0.0.1:8000/api/instructors` (with owner JWT) → returns instructor list.
 
 ---
 
@@ -1154,10 +1247,10 @@ Once accepted, collect and translate all required documents for the Certificate 
 |---|---|---|
 | ~~(a)~~ | ~~Course Student entity (`course_students`) + Courses (`courses`) + multi-enrollment + Registration page (fee installments → accounting account 4300)~~ | ✅ **DONE (C16 + C17)** |
 | ~~(conv)~~ | ~~Course student → Student / Candidate conversion (convert-once guard per track)~~ | ✅ **DONE (C18)** |
-| (b) | Batches (`batches` + `batch_enrollments`) + per-student payment status | Next — see §12 |
-| (c) | Contract Instructors (`instructors` + `instructor_engagements` + `instructor_payments`) → accounting expense acct 5100 | After (b) |
-| (d) | Owner finance command-center / dashboard (pending in/out, income/expense summary) | After (a)–(c) |
-| (e) | Course lead funnel: extend `inquiries.interest_track` CHECK to `'language_course'`; add course-inquiry → course-student conversion endpoint | Reuses existing inquiry infrastructure |
+| ~~(b)~~ | ~~Batches (`batches` + `batch_enrollments`) + per-student payment status~~ | ✅ **DONE (C19)** |
+| ~~(c)~~ | ~~Contract Instructors (`instructors` + `instructor_engagements` + `instructor_payments`) → accounting expense acct 5100~~ | ✅ **DONE (C20)** |
+| ~~(d)~~ | ~~Owner finance command-center / dashboard (pending in/out, income/expense summary)~~ | ✅ **DONE (C21)** |
+| (e) | Course lead funnel: extend `inquiries.interest_track` CHECK to `'language_course'`; add course-inquiry → course-student conversion endpoint | Next — see §12 |
 | (f) | Japan language-course roadmap template (from Component 8 Phase 1–4 workflow); reuse admission/placement template pattern | After (e) |
 
 **Key dependency chain:** ~~Step 0 (auto-posting)~~ ✅ DONE → ~~(a) course fees post as revenue~~ ✅ DONE → (b) batches → (c) instructor payments post as expense → (d) dashboard aggregates all of the above.
