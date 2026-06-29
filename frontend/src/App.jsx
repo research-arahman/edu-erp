@@ -29,6 +29,7 @@ import Courses from './pages/Courses';
 import CourseStudents from './pages/CourseStudents';
 import Batches from './pages/Batches';
 import Instructors from './pages/Instructors';
+import FinanceDashboard from './pages/FinanceDashboard';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -79,6 +80,14 @@ function AppRoutes() {
             element={
               ['owner', 'manager', 'accountant'].includes(user?.role)
                 ? <Accounting />
+                : <Navigate to="/" replace />
+            }
+          />
+          <Route
+            path="finance-dashboard"
+            element={
+              ['owner', 'manager', 'accountant'].includes(user?.role)
+                ? <FinanceDashboard />
                 : <Navigate to="/" replace />
             }
           />

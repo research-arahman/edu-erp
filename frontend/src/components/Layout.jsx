@@ -141,6 +141,11 @@ export default function Layout() {
               </p>
               <ul className="space-y-0.5">
                 <li>
+                  <NavLink to="/finance-dashboard" className={linkClass}>
+                    Finance Dashboard
+                  </NavLink>
+                </li>
+                <li>
                   <NavLink to="/accounting" className={linkClass}>
                     Accounting
                   </NavLink>
