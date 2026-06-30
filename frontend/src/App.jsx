@@ -30,6 +30,7 @@ import CourseStudents from './pages/CourseStudents';
 import Batches from './pages/Batches';
 import Instructors from './pages/Instructors';
 import FinanceDashboard from './pages/FinanceDashboard';
+import CourseRoadmapTemplates from './pages/CourseRoadmapTemplates';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -97,6 +98,7 @@ function AppRoutes() {
           <Route path="course-students" element={<CourseStudents />} />
           <Route path="batches" element={<Batches />} />
           <Route path="instructors" element={<Instructors />} />
+          <Route path="course-roadmap-templates" element={<CourseRoadmapTemplates />} />
           <Route
             path="staff"
             element={user?.role === 'owner' ? <Staff /> : <Navigate to="/" replace />}

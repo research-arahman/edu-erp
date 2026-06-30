@@ -755,6 +755,7 @@ git add supabase/migrations/ && git commit -m "..." && git push
 2. **Language Course Track** — foundation (C16), payments (C17), conversion (C18), batches (C19), contract instructors (C20), and finance dashboard (C21) are **DONE**. Remaining in order:
    - **(a) Course Lead Funnel** — extend `inquiries.interest_track` CHECK to add `'language_course'`; add `POST /inquiries/{id}/convert-course-student` endpoint; show course-specific fields in inquiry form when `interest_track === 'language_course'`. Reuses existing inquiry infrastructure.
    - **(b) Japan Language-School Roadmap Template** — the 4-phase workflow in §14 Component 8 maps onto the reusable process-template pattern; build when the lead funnel conversion is done so course students have a roadmap after converting.
+   - **(c) COURSE TRACKS (duration/intensity tiers) + tiered pricing** — planned, not built; see §14 Component 9. Add a `track` attribute (standard / intensive / long) + schedule fields (total_hours, weekly_days, session_hours, duration_weeks) to courses or batches; support tiered pricing per track. This is a distinct future chunk, separate from roadmaps.
    - Full spec in §14.
 
 3. **Wire `assigned_counselor` / `created_by`** into feature routers and schemas. All feature routers are now auth-gated; `get_current_user()` is already available on every endpoint. When creating a student/candidate/inquiry/application: populate `created_by` from `get_current_user().id`. When assigning: populate `assigned_counselor` from chosen user's ID. FK columns already exist in DB but are omitted from all schemas and forms.
@@ -1175,6 +1176,8 @@ Course leads arrive primarily from **social-media advertising** (people interest
 
 ### Component 8 — Japan Language-Course Roadmap Template (PRESERVE VERBATIM)
 
+> **Self-service template authoring note:** The **Course Roadmap Templates** system (`CourseRoadmapTemplates.jsx` + `course_roadmaps.py` router + `course_roadmap_templates` / `course_roadmap_steps` / `course_step_progress` tables — seeded with a 21-step Japan Language School roadmap) is **already built**. The owner can CREATE and EDIT their own templates (for IELTS, GRE, GMAT, etc.) directly via the Roadmap Templates page — self-service template authoring is fully supported. Component 8 below is the *content spec* (the step-by-step workflow the owner gave for the Japan Language-School pathway); it has already been seeded as a template. Preserve for reference.
+
 The owner provided a detailed **4-phase agency workflow** for admitting a Bangladeshi student to a Japanese language school (~6 months before arrival). This maps onto the reusable process-template pattern (like admission/placement templates) but is specific to the language-school pathway. Preserve the full detail below as the authoritative source for the roadmap template when it is built.
 
 ---
@@ -1237,6 +1240,29 @@ Once accepted, collect and translate all required documents for the Certificate 
 
 ---
 
+### Component 9 — Course Delivery Tracks (duration/intensity tiers) + Tiered Pricing — PLANNED, NOT BUILT
+
+> **Distinct future chunk. Do NOT implement unless explicitly requested. This is an attribute of the course/batch — not a roadmap.**
+
+Based on Bangladesh market research, the business will offer JLPT N5 (and similar test-prep courses) in **three delivery tracks**. These tracks represent a scheduling/intensity tier, not a curriculum difference:
+
+| Track | Duration | Total hours | Weekly schedule | Primary audience |
+|---|---|---|---|---|
+| **Standard** | 3–4 months | ~160–240 classroom hours | 3–4 days/week, 2–2.5 hrs/session | General student-visa applicants; standard JLPT / NAT N5 takers |
+| **Intensive / Crash** | 1.5–3 months | ~180–240 hours compressed | 6 days/week, 2–2.5 hrs/day | Workforce migration (SSW / TITP) job-seekers needing rapid language clearance; some 1.5-month "challenge" batches |
+| **Long / Part-time** | 5–6 months | lower weekly hour total | 2 days/week or weekend-only | Working professionals, university students, academic-institution tie-ups (e.g. JUAAB 5-month, BRAC BIL 6-month) |
+
+**Curriculum note (N5 prep standard in Bangladesh):** Minna no Nihongo I core + Bangla grammar notes + Basic Kanji Book + mock workbooks (Shin Nihongo 500 Mon, JLPT Official Practice Workbooks Vol. 1 & 2). JUAAB / Japan Foundation also use Marugoto / Irodori. Reference material for the owner — not a system field.
+
+**Implementation idea (for later):**
+- Add a `track` column (`standard | intensive | long`) to `batches` (the same course, e.g. JLPT N5, can run in different tracks simultaneously).
+- Add schedule fields to `batches`: `total_hours` (float), `weekly_days` (int), `session_hours` (float), `duration_weeks` (int) — all nullable/optional initially.
+- **Tiered pricing:** Support different default fees per track, either via (a) a `course_pricing` table keyed by `(course_id, track)` storing `default_fee`, or (b) a `default_fee` column on `batches` that overrides the course-level default when set. Option (b) is simpler and reuses the existing `agreed_fee` override already on `course_enrollments` — evaluate at build time.
+- The CourseStudents enrollment flow already supports an `agreed_fee` override per enrollment — tiered pricing slots naturally into that. The batch-level default pre-fills agreed_fee for the chosen track.
+- **UI touchpoint:** batch add/edit drawer gains a "Track" dropdown (Standard / Intensive / Long) and optional schedule fields. The batch roster / Batches page surfaces the track label alongside the batch name.
+
+---
+
 ### Recommended Build Sequence
 
 > ~~**Step 0 (build FIRST — prerequisite):** Accounting Phase 2 — **Auto-posting infrastructure.**~~ ✅ **DONE (C15).** The `_sync_fee_accounting` helper, `posted_transaction_id` link on `service_fees`, and revenue auto-posting are complete. Course fee and instructor-payment postings will reuse the same `transactions` table and the same auto-post pattern established in C15.
@@ -1252,6 +1278,7 @@ Once accepted, collect and translate all required documents for the Certificate 
 | ~~(d)~~ | ~~Owner finance command-center / dashboard (pending in/out, income/expense summary)~~ | ✅ **DONE (C21)** |
 | (e) | Course lead funnel: extend `inquiries.interest_track` CHECK to `'language_course'`; add course-inquiry → course-student conversion endpoint | Next — see §12 |
 | (f) | Japan language-course roadmap template (from Component 8 Phase 1–4 workflow); reuse admission/placement template pattern | After (e) |
+| (g) | Course delivery tracks (standard / intensive / long) + tiered pricing; add track + schedule fields to batches + pricing structure (see Component 9) | Standalone — after (f) or independently |
 
 **Key dependency chain:** ~~Step 0 (auto-posting)~~ ✅ DONE → ~~(a) course fees post as revenue~~ ✅ DONE → (b) batches → (c) instructor payments post as expense → (d) dashboard aggregates all of the above.
 

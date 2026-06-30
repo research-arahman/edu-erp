@@ -116,6 +116,15 @@ export default function CourseStudents() {
 
   const [batchesByCourse, setBatchesByCourse] = useState({});
 
+  // ── roadmap state (edit mode only) ──────────────────────────────────────────
+  const [roadmapTemplates,    setRoadmapTemplates]    = useState([]);
+  const [roadmapTemplateId,   setRoadmapTemplateId]   = useState('');
+  const [roadmapSteps,        setRoadmapSteps]        = useState([]);
+  const [roadmapProgress,     setRoadmapProgress]     = useState({}); // { step_id: { status, note, ... } }
+  const [roadmapLoading,      setRoadmapLoading]      = useState(false);
+  const [roadmapSaving,       setRoadmapSaving]       = useState(null); // step_id | null
+  const [stepNotes,           setStepNotes]           = useState({}); // { step_id: string }
+
   // ── data loading ────────────────────────────────────────────────────────────
 
   function loadStudents() {
@@ -139,13 +148,18 @@ export default function CourseStudents() {
   }
 
   useEffect(() => {
-    const promises = [api.get('/course-students'), api.get('/courses')];
-    if (isFinance) promises.push(api.get('/referral-partners'));
-    Promise.all(promises)
-      .then((results) => {
-        setStudents(results[0]);
-        setCourses(results[1]);
-        if (isFinance && results[2]) setPartners(results[2]);
+    const basePromises = [
+      api.get('/course-students'),
+      api.get('/courses'),
+      api.get('/course-roadmap-templates'),
+    ];
+    const financePromise = isFinance ? api.get('/referral-partners') : Promise.resolve([]);
+    Promise.all([...basePromises, financePromise])
+      .then(([sts, crs, templates, pnrs]) => {
+        setStudents(sts);
+        setCourses(crs);
+        setRoadmapTemplates(templates);
+        if (isFinance) setPartners(pnrs);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -166,6 +180,15 @@ export default function CourseStudents() {
     setPayErrors({});
   }
 
+  function resetRoadmapState() {
+    setRoadmapTemplateId('');
+    setRoadmapSteps([]);
+    setRoadmapProgress({});
+    setStepNotes({});
+    setRoadmapLoading(false);
+    setRoadmapSaving(null);
+  }
+
   function openAdd() {
     setForm(EMPTY_FORM);
     setFormError(null);
@@ -173,6 +196,7 @@ export default function CourseStudents() {
     setEnroll(EMPTY_ENROLL);
     setEnrollError(null);
     resetPaymentState();
+    resetRoadmapState();
     setPanel('add');
   }
 
@@ -197,6 +221,12 @@ export default function CourseStudents() {
     setEditEnrError(null);
     resetPaymentState();
     setConvertError(null);
+    // Init roadmap state
+    resetRoadmapState();
+    if (student.roadmap_template_id) {
+      setRoadmapTemplateId(student.roadmap_template_id);
+      loadRoadmapData(student.id, student.roadmap_template_id);
+    }
     setPanel('edit');
   }
 
@@ -211,6 +241,7 @@ export default function CourseStudents() {
     setEditEnrError(null);
     resetPaymentState();
     setConvertError(null);
+    resetRoadmapState();
   }
 
   // ── form handlers ────────────────────────────────────────────────────────────
@@ -385,6 +416,116 @@ export default function CourseStudents() {
     }
   }
 
+  // ── roadmap functions ──────────────────────────────────────────────────────────
+
+  async function loadRoadmapData(studentId, templateId) {
+    setRoadmapLoading(true);
+    try {
+      const [steps, progressArr] = await Promise.all([
+        api.get(`/course-roadmap-templates/${templateId}/steps`),
+        api.get(`/course-students/${studentId}/progress`),
+      ]);
+      setRoadmapSteps(steps);
+      const progressMap = {};
+      const notesMap = {};
+      progressArr.forEach((p) => {
+        progressMap[p.step_id] = p;
+        notesMap[p.step_id] = p.note ?? '';
+      });
+      setRoadmapProgress(progressMap);
+      setStepNotes(notesMap);
+    } catch {
+      // fail silently — roadmap section stays empty
+    } finally {
+      setRoadmapLoading(false);
+    }
+  }
+
+  async function handleRoadmapTemplateChange(newTemplateId) {
+    const prevTemplateId = roadmapTemplateId;
+    setRoadmapTemplateId(newTemplateId);
+    setRoadmapSteps([]);
+    setRoadmapProgress({});
+    setStepNotes({});
+    try {
+      await api.patch(`/course-students/${selected.id}`, {
+        roadmap_template_id: newTemplateId || null,
+      });
+      setSelected((prev) => ({ ...prev, roadmap_template_id: newTemplateId || null }));
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.id === selected.id
+            ? { ...s, roadmap_template_id: newTemplateId || null }
+            : s
+        )
+      );
+      if (newTemplateId) {
+        await loadRoadmapData(selected.id, newTemplateId);
+      }
+    } catch (err) {
+      // Revert on failure
+      setRoadmapTemplateId(prevTemplateId);
+      alert(`Failed to update roadmap: ${err.message}`);
+    }
+  }
+
+  async function handleStepStatus(step, newStatus) {
+    const stepId = step.id;
+    setRoadmapSaving(stepId);
+    try {
+      const note = stepNotes[stepId] ?? '';
+      const payload = { status: newStatus };
+      if (note.trim()) payload.note = note.trim();
+      const updated = await api.put(
+        `/course-students/${selected.id}/steps/${stepId}/progress`,
+        payload
+      );
+      setRoadmapProgress((prev) => ({ ...prev, [stepId]: updated }));
+    } catch (err) {
+      alert(`Update failed: ${err.message}`);
+    } finally {
+      setRoadmapSaving(null);
+    }
+  }
+
+  async function handleStepNoteSave(step) {
+    const stepId = step.id;
+    const note = stepNotes[stepId] ?? '';
+    const currentProgress = roadmapProgress[stepId];
+    // Skip if no existing progress and note is empty
+    if (!currentProgress && !note.trim()) return;
+    const status = currentProgress?.status ?? 'pending';
+    setRoadmapSaving(stepId);
+    try {
+      const payload = { status };
+      if (note.trim()) payload.note = note.trim();
+      const updated = await api.put(
+        `/course-students/${selected.id}/steps/${stepId}/progress`,
+        payload
+      );
+      setRoadmapProgress((prev) => ({ ...prev, [stepId]: updated }));
+    } catch {
+      // fail silently for note auto-saves
+    } finally {
+      setRoadmapSaving(null);
+    }
+  }
+
+  function groupStepsByPhase(steps) {
+    const groups = [];
+    let currentPhase = undefined;
+    for (const step of steps) {
+      const m = step.title.match(/^(Phase\s+\d+)/i);
+      const phase = m ? m[1] : null;
+      if (phase !== currentPhase) {
+        groups.push({ phase, steps: [] });
+        currentPhase = phase;
+      }
+      groups[groups.length - 1].steps.push(step);
+    }
+    return groups;
+  }
+
   // ── payment functions (finance-gated) ────────────────────────────────────────
 
   async function fetchEnrPayments(enrollmentId) {
@@ -483,6 +624,9 @@ export default function CourseStudents() {
   }
 
   const selectedCourse = courses.find((c) => c.id === enroll.course_id);
+
+  const roadmapDoneCount  = roadmapSteps.filter((s) => roadmapProgress[s.id]?.status === 'done').length;
+  const roadmapTotalCount = roadmapSteps.length;
 
   // ── render ───────────────────────────────────────────────────────────────────
 
@@ -1267,6 +1411,163 @@ export default function CourseStudents() {
                       {enrolling ? 'Enrolling…' : '+ Enrol'}
                     </button>
                   </form>
+                </div>
+              )}
+
+              {/* ── Roadmap section (edit mode only) ─────────────────────── */}
+              {panel === 'edit' && (
+                <div className="border-t border-gray-100 px-6 py-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Roadmap
+                    </p>
+                    {roadmapTotalCount > 0 && (
+                      <span className={`text-xs font-semibold ${
+                        roadmapDoneCount === roadmapTotalCount
+                          ? 'text-green-600'
+                          : 'text-gray-500'
+                      }`}>
+                        {roadmapDoneCount} / {roadmapTotalCount} done
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Template picker */}
+                  <Field label="Roadmap Template">
+                    <select
+                      className={INPUT}
+                      value={roadmapTemplateId}
+                      onChange={(e) => handleRoadmapTemplateChange(e.target.value)}
+                      disabled={roadmapLoading}
+                    >
+                      <option value="">— none —</option>
+                      {roadmapTemplates
+                        .filter((t) => t.is_active || t.id === roadmapTemplateId)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}{t.category ? ` (${t.category})` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+
+                  {/* Steps checklist */}
+                  {roadmapLoading ? (
+                    <p className="mt-3 text-xs text-gray-400">Loading roadmap…</p>
+                  ) : roadmapTotalCount > 0 ? (
+                    <div className="mt-4 space-y-4">
+                      {/* Progress bar */}
+                      <div className="relative h-1.5 overflow-hidden rounded-full bg-gray-200">
+                        <div
+                          className="h-full rounded-full bg-indigo-500 transition-all duration-300"
+                          style={{ width: roadmapTotalCount ? `${(roadmapDoneCount / roadmapTotalCount) * 100}%` : '0%' }}
+                        />
+                      </div>
+
+                      {groupStepsByPhase(roadmapSteps).map((group, gi) => (
+                        <div key={gi}>
+                          {group.phase && (
+                            <p className="mb-2 text-xs font-bold uppercase tracking-wider text-indigo-500">
+                              {group.phase}
+                            </p>
+                          )}
+                          <div className="space-y-1.5">
+                            {group.steps.map((step) => {
+                              const prog    = roadmapProgress[step.id];
+                              const status  = prog?.status ?? 'pending';
+                              const isSaving = roadmapSaving === step.id;
+                              const isDone  = status === 'done';
+                              const isWip   = status === 'in_progress';
+
+                              return (
+                                <div
+                                  key={step.id}
+                                  className={`rounded-md border px-3 py-2.5 ${
+                                    isDone
+                                      ? 'border-green-100 bg-green-50'
+                                      : isWip
+                                      ? 'border-amber-100 bg-amber-50/50'
+                                      : 'border-gray-200 bg-white'
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    {/* Order badge */}
+                                    <span className={`mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold ${
+                                      isDone
+                                        ? 'bg-green-500 text-white'
+                                        : isWip
+                                        ? 'bg-amber-400 text-white'
+                                        : 'bg-gray-200 text-gray-500'
+                                    }`}>
+                                      {isDone ? '✓' : (step.step_order ?? '—')}
+                                    </span>
+
+                                    {/* Title + description */}
+                                    <div className="min-w-0 flex-1">
+                                      <p className={`text-xs font-medium leading-snug ${
+                                        isDone ? 'text-gray-400 line-through' : 'text-gray-800'
+                                      }`}>
+                                        {step.title}
+                                      </p>
+                                      {step.description && (
+                                        <p className="mt-0.5 text-xs text-gray-400 line-clamp-2">
+                                          {step.description}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* Status buttons */}
+                                    <div className="flex flex-shrink-0 items-center gap-0.5">
+                                      {[
+                                        { value: 'pending',     label: '–',   activeClass: 'bg-gray-300 text-gray-700' },
+                                        { value: 'in_progress', label: 'WIP', activeClass: 'bg-amber-400 text-white' },
+                                        { value: 'done',        label: '✓',   activeClass: 'bg-green-500 text-white' },
+                                      ].map((opt) => (
+                                        <button
+                                          key={opt.value}
+                                          type="button"
+                                          onClick={() => handleStepStatus(step, opt.value)}
+                                          disabled={isSaving}
+                                          title={opt.value.replace('_', ' ')}
+                                          className={`rounded px-1.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-wait ${
+                                            status === opt.value
+                                              ? opt.activeClass
+                                              : 'text-gray-300 hover:bg-gray-100 hover:text-gray-600'
+                                          }`}
+                                        >
+                                          {opt.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Note field */}
+                                  <div className="mt-1.5 ml-7">
+                                    <input
+                                      className="w-full rounded border border-gray-100 bg-transparent px-2 py-0.5 text-xs text-gray-500 placeholder-gray-300 focus:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                                      value={stepNotes[step.id] ?? ''}
+                                      onChange={(e) =>
+                                        setStepNotes((prev) => ({ ...prev, [step.id]: e.target.value }))
+                                      }
+                                      onBlur={() => {
+                                        const current   = stepNotes[step.id] ?? '';
+                                        const persisted = roadmapProgress[step.id]?.note ?? '';
+                                        if (current !== persisted) handleStepNoteSave(step);
+                                      }}
+                                      placeholder="Add a note…"
+                                      disabled={isSaving}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : roadmapTemplateId ? (
+                    <p className="mt-3 text-xs text-gray-400">No steps in this template yet.</p>
+                  ) : null}
                 </div>
               )}
 

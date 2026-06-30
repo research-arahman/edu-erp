@@ -674,6 +674,7 @@ class CourseStudentUpdate(BaseModel):
     status: Optional[str] = None
     referred_by_partner_id: Optional[str] = None
     notes: Optional[str] = None
+    roadmap_template_id: Optional[str] = None
 
 
 class EnrollmentCreate(BaseModel):
@@ -778,3 +779,40 @@ class InstructorPaymentUpdate(BaseModel):
     notes: Optional[str] = None
     batch_id: Optional[str] = None
     currency: Optional[str] = None
+
+
+# ── Course Roadmap Templates ───────────────────────────────────────────────────
+
+class CourseRoadmapTemplateCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    is_active: Optional[bool] = True
+
+
+class CourseRoadmapTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ── Course Roadmap Steps ───────────────────────────────────────────────────────
+
+class CourseRoadmapStepCreate(BaseModel):
+    step_order: int
+    title: str
+    description: Optional[str] = None
+
+
+class CourseRoadmapStepUpdate(BaseModel):
+    step_order: Optional[int] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+# ── Course Student Step Progress ───────────────────────────────────────────────
+
+class CourseStepProgressUpdate(BaseModel):
+    status: Literal["pending", "in_progress", "done"]
+    note: Optional[str] = None

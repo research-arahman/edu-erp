@@ -50,10 +50,11 @@ const NAV = [
   {
     group: 'Language Courses',
     items: [
-      { to: '/courses',         label: 'Courses' },
-      { to: '/course-students', label: 'Course Students' },
-      { to: '/batches',         label: 'Batches' },
-      { to: '/instructors',     label: 'Instructors' },
+      { to: '/courses',                  label: 'Courses' },
+      { to: '/course-students',          label: 'Course Students' },
+      { to: '/batches',                  label: 'Batches' },
+      { to: '/instructors',              label: 'Instructors' },
+      { to: '/course-roadmap-templates', label: 'Roadmap Templates' },
     ],
   },
   {

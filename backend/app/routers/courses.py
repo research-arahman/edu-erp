@@ -331,11 +331,18 @@ def _enrich_course_students(rows: list) -> list:
             p_res = supabase.table("referral_partners").select("id,name").in_("id", partner_ids).execute()
             partner_map = {p["id"]: p["name"] for p in p_res.data}
 
+        roadmap_ids = list({r["roadmap_template_id"] for r in rows if r.get("roadmap_template_id")})
+        roadmap_map: dict = {}
+        if roadmap_ids:
+            rm_res = supabase.table("course_roadmap_templates").select("id,name").in_("id", roadmap_ids).execute()
+            roadmap_map = {rm["id"]: rm["name"] for rm in rm_res.data}
+
         for row in rows:
             student_enrs = enr_by_student.get(row["id"], [])
             row["enrollments"] = student_enrs
             row["course_count"] = len(student_enrs)
             row["referred_by_partner_name"] = partner_map.get(row.get("referred_by_partner_id"))
+            row["roadmap_template_name"] = roadmap_map.get(row.get("roadmap_template_id"))
 
     except Exception as exc:
         logger.warning("Enrichment failed for course students: %s", exc)
@@ -343,6 +350,7 @@ def _enrich_course_students(rows: list) -> list:
             row.setdefault("enrollments", [])
             row.setdefault("course_count", 0)
             row.setdefault("referred_by_partner_name", None)
+            row.setdefault("roadmap_template_name", None)
 
     return rows
 
